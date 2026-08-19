@@ -6,7 +6,7 @@
   "scripts": {
     "stats": "ts-node src/index.ts",
     "build": "tsc",
-   "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js",
+  "test": "jest",
     "test:watch": "jest --watch",
     "dev": "vite",
     "web:build": "tsc && vite build",
@@ -20,6 +20,10 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@babel/core": "^7.25.0",
+    "@babel/preset-env": "^7.25.0",
+    "@babel/preset-typescript": "^7.24.0",
+    "babel-jest": "^29.7.0",
     "@types/jest": "^29.5.0",
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.3",
