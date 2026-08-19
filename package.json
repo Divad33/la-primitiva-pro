@@ -6,7 +6,7 @@
   "scripts": {
     "stats": "ts-node src/index.ts",
     "build": "tsc",
-    "test": "jest",
+   "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js",
     "test:watch": "jest --watch",
     "dev": "vite",
     "web:build": "tsc && vite build",
