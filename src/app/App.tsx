@@ -1,15 +1,29 @@
-import { useState } from 'react'
-import { generarEstadisticasCompletas } from '../utils/estadisticas'
-import { generarBoletoEstrategias } from '../utils/prediccion'
-import { ultimosSorteos } from '../utils/filtros'
+import { useState } from 'react';
+import { useHistorico } from './hooks/useHistorico';
+import { generarEstadisticasCompletas } from '../utils/estadisticas';
+import { generarBoletoEstrategias } from '../utils/prediccion';
+import { ultimosSorteos } from '../utils/filtros';
 
 function App() {
-  const [stats] = useState(() => generarEstadisticasCompletas())
-  const [boletos, setBoletos] = useState(() => generarBoletoEstrategias())
-  const [tab, setTab] = useState<'stats' | 'numbers' | 'last'>('stats')
-  const ultimo = ultimosSorteos(1)[0]
+  const { historico, cargando, actualizando, ultimaActualizacion, actualizar, totalSorteos, ultimoSorteo } = useHistorico();
+  const [stats] = useState(() => generarEstadisticasCompletas());
+  const [boletos, setBoletos] = useState(() => generarBoletoEstrategias());
+  const [tab, setTab] = useState<'stats' | 'numbers' | 'last'>('stats');
+  const [mensaje, setMensaje] = useState('');
 
-  const generarNuevos = () => setBoletos(generarBoletoEstrategias())
+  const generarNuevos = () => setBoletos(generarBoletoEstrategias());
+
+  const handleActualizar = async () => {
+    const resultado = await actualizar();
+    if (resultado.nuevo) {
+      setMensaje(`✅ Nuevo sorteo añadido: ${resultado.sorteo?.fecha}`);
+    } else if (resultado.sorteo) {
+      setMensaje(`ℹ️ Ya tienes el último sorteo (${resultado.sorteo.fecha})`);
+    } else {
+      setMensaje('❌ No se pudo conectar con LAE');
+    }
+    setTimeout(() => setMensaje(''), 3000);
+  };
 
   const renderBalls = (nums: number[], colorClass: string) => (
     <div className="flex flex-wrap gap-2 mt-1">
@@ -19,16 +33,50 @@ function App() {
         </span>
       ))}
     </div>
-  )
+  );
+
+  if (cargando) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400 mx-auto mb-4"></div>
+          <p>Cargando datos...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen p-4 max-w-md mx-auto pb-20">
       <h1 className="text-3xl font-black text-center text-yellow-400 mb-2 drop-shadow-md">
         🎰 La Primitiva Pro
       </h1>
-      <p className="text-center text-gray-400 text-sm mb-4">
-        {stats.totalSorteos.toLocaleString()} sorteos analizados
+      <p className="text-center text-gray-400 text-sm mb-2">
+        {totalSorteos.toLocaleString()} sorteos analizados
       </p>
+
+      {/* Botón de actualización */}
+      <div className="flex gap-2 mb-3">
+        <button
+          onClick={handleActualizar}
+          disabled={actualizando}
+          className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white font-bold py-2 px-4 rounded-lg text-sm transition"
+        >
+          {actualizando ? '⏳ Actualizando...' : '🔄 Buscar nuevo sorteo'}
+        </button>
+      </div>
+
+      {mensaje && (
+        <div className="bg-slate-700 text-white text-sm p-2 rounded-lg mb-3 text-center">
+          {mensaje}
+        </div>
+      )}
+
+      {ultimaActualizacion && (
+        <p className="text-center text-xs text-gray-500 mb-3">
+          Última actualización: {ultimaActualizacion}
+        </p>
+      )}
 
       <div className="flex gap-2 mb-4">
         {[
@@ -107,22 +155,23 @@ function App() {
         </div>
       )}
 
-      {tab === 'last' && (
+      {tab === 'last' && ultimoSorteo && (
         <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
           <h2 className="text-lg font-bold text-gray-300 mb-2">📅 Último Sorteo Registrado</h2>
-          <p className="text-sm text-gray-400 mb-3">Fecha: <span className="text-white font-bold">{ultimo.fecha}</span></p>
+          <p className="text-sm text-gray-400 mb-3">Fecha: <span className="text-white font-bold">{ultimoSorteo.fecha}</span></p>
           <p className="text-xs text-gray-500 mb-1">Números principales</p>
-          {renderBalls(ultimo.numeros, 'bg-gray-700 text-white')}
+          {renderBalls(ultimoSorteo.numeros, 'bg-gray-700 text-white')}
           <div className="mt-4 grid grid-cols-2 gap-4">
-            <div className="bg-slate-900 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">Complementario</p><p className="text-2xl font-black text-yellow-400">{ultimo.complementario}</p></div>
-            <div className="bg-slate-900 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">Reintegro</p><p className="text-2xl font-black text-yellow-400">{ultimo.reintegro ?? 'N/D'}</p></div>
+            <div className="bg-slate-900 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">Complementario</p><p className="text-2xl font-black text-yellow-400">{ultimoSorteo.complementario}</p></div>
+            <div className="bg-slate-900 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">Reintegro</p><p className="text-2xl font-black text-yellow-400">{ultimoSorteo.reintegro ?? 'N/D'}</p></div>
           </div>
         </div>
       )}
 
       <p className="text-center text-xs text-gray-600 mt-6 mb-4">⚠️ La lotería es un juego de azar. Uso educativo.</p>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
+
