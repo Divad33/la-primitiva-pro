@@ -4195,7 +4195,7 @@ export const HISTORICO_PRIMITIVA: SorteoPrimitiva[] = [
   { fecha: '13/08/2026', numeros: [21, 27, 33, 41, 48, 49], complementario: 11, reintegro: 2, joker: 8219703 },
   { fecha: '15/08/2026', numeros: [8, 13, 17, 23, 33, 47], complementario: 11, reintegro: 9, joker: 2095565 },
   { fecha: '17/08/2026', numeros: [2, 4, 19, 28, 46, 48], complementario: 18, reintegro: 0, joker: 7076326 }
-];
+] as SorteoPrimitiva[];
 
 /** Número total de sorteos en el histórico */
 export const TOTAL_SORTEOS = 4175;
