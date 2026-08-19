@@ -38,8 +38,11 @@ jobs:
       - name: Add Android
         run: npx cap add android
 
-      - name: Sync Android
-        run: npx cap sync android
+      - name: Fix Kotlin duplicates
+        run: |
+          cd android/app
+          sed -i '/dependencies {/a\    configurations.all {\n        exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk7"\n        exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk8"\n    }' build.gradle
+
 
       - name: Build APK
         run: |
