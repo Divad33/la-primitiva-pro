@@ -21,43 +21,32 @@ export interface CoOcurrencePair {
 }
 
 export interface DecadaAnalysis {
-  decada: number; // 0=1-10, 1=11-20, 2=21-30, 3=31-40, 4=41-49
+  decada: number;
   count: number;
   pct: number;
   numeros: number[];
 }
 
 export interface ParImparPattern {
-  pattern: string; // ej: "3P3I", "4P2I"
+  pattern: string;
   count: number;
   pct: number;
 }
 
 export interface SumaRange {
-  range: string; // ej: "100-120"
+  range: string;
   count: number;
   pct: number;
 }
 
 export interface AdvancedAnalysis {
-  // Transiciones: qué número tiende a seguir a otro en sorteos consecutivos
   transitions: NumeroTransitionEntry[];
   strongestTransitionLinks: { from: number; to: number; count: number; pct: number }[];
   lastSorteoTransitions: NumeroTransition[];
-  
-  // Co-ocurrencia: qué números suelen salir juntos
   coOcurrence: CoOcurrencePair[];
-  
-  // Análisis por decenas
   decadas: DecadaAnalysis[];
-  
-  // Patrones par/impar más frecuentes
   parImparPatterns: ParImparPattern[];
-  
-  // Rangos de suma más frecuentes
   sumaRanges: SumaRange[];
-  
-  // Último sorteo como referencia
   lastSorteo: SorteoPrimitiva | null;
 }
 
@@ -72,25 +61,17 @@ export interface JugadaAvanzada {
 
 const MIN_OCCURRENCES = 3;
 
-/**
- * Análisis avanzado inspirado en matrices de transición (Markov)
- * adaptado para La Primitiva (6 números, 1-49)
- */
-export function analisisAvanzado(): AdvancedAnalysis {
-  const historico = [...HISTORICO_PRIMITIVA];
+export function analisisAvanzado(historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): AdvancedAnalysis {
   const total = historico.length;
-  
   if (total === 0) return emptyAnalysis();
 
-  // ========== 1. MATRICES DE TRANSICIÓN ==========
-  // Qué número tiende a aparecer en el siguiente sorteo después de otro
+  // 1. MATRICES DE TRANSICIÓN
   const transitions: number[][] = Array.from({ length: 50 }, () => Array(50).fill(0));
   const originCounts: number[] = Array(50).fill(0);
-  
+
   for (let i = 0; i < historico.length - 1; i++) {
     const actual = historico[i].numeros;
     const siguiente = historico[i + 1].numeros;
-    
     for (const numActual of actual) {
       originCounts[numActual]++;
       for (const numSiguiente of siguiente) {
@@ -105,42 +86,25 @@ export function analisisAvanzado(): AdvancedAnalysis {
   for (let num = 1; num <= 49; num++) {
     const totalOrigin = originCounts[num];
     if (totalOrigin < MIN_OCCURRENCES) continue;
-
     const followers: NumeroTransition[] = [];
     for (let next = 1; next <= 49; next++) {
       const count = transitions[num][next];
-      if (count > 0) {
-        followers.push({ next, count, pct: (count / totalOrigin) * 100 });
-      }
+      if (count > 0) followers.push({ next, count, pct: (count / totalOrigin) * 100 });
     }
     followers.sort((a, b) => b.count - a.count || a.next - b.next);
-
     const topFive = followers.slice(0, 5);
-    const confidence = totalOrigin > 0 
-      ? (topFive.reduce((sum, f) => sum + f.count, 0) / totalOrigin) * 100 
-      : 0;
-
+    const confidence = totalOrigin > 0 ? (topFive.reduce((sum, f) => sum + f.count, 0) / totalOrigin) * 100 : 0;
     transitionEntries.push({ numero: num, total: totalOrigin, followers: topFive, confidence });
-
-    for (const f of followers) {
-      allLinks.push({ from: num, to: f.next, count: f.count, pct: f.pct });
-    }
+    for (const f of followers) allLinks.push({ from: num, to: f.next, count: f.count, pct: f.pct });
   }
 
-  transitionEntries.sort((a, b) => 
-    b.confidence - a.confidence || b.total - a.total || a.numero - b.numero
-  );
+  transitionEntries.sort((a, b) => b.confidence - a.confidence || b.total - a.total || a.numero - b.numero);
+  const strongestLinks = allLinks.sort((a, b) => b.count - a.count || b.pct - a.pct || a.from - b.from || a.to - b.to).slice(0, 15);
 
-  const strongestLinks = allLinks
-    .sort((a, b) => b.count - a.count || b.pct - a.pct || a.from - b.from || a.to - b.to)
-    .slice(0, 15);
-
-  // Predicciones basadas en el último sorteo
   const ultimoSorteo = historico[historico.length - 1];
   const lastNumeros = ultimoSorteo.numeros;
   const lastTransitions: NumeroTransition[] = [];
   const seenPred = new Set<number>();
-
   for (const num of lastNumeros) {
     const entry = transitionEntries.find(e => e.numero === num);
     if (entry) {
@@ -155,9 +119,8 @@ export function analisisAvanzado(): AdvancedAnalysis {
   lastTransitions.sort((a, b) => b.count - a.count);
   const lastSorteoTransitions = lastTransitions.slice(0, 10);
 
-  // ========== 2. CO-OCURRENCIA (números que salen juntos) ==========
+  // 2. CO-OCURRENCIA
   const coOcurrenceMap = new Map<string, number>();
-  
   for (const sorteo of historico) {
     const nums = sorteo.numeros;
     for (let i = 0; i < nums.length; i++) {
@@ -168,7 +131,6 @@ export function analisisAvanzado(): AdvancedAnalysis {
       }
     }
   }
-
   const coOcurrence: CoOcurrencePair[] = [...coOcurrenceMap.entries()]
     .map(([key, count]) => {
       const [a, b] = key.split('-').map(Number);
@@ -177,15 +139,14 @@ export function analisisAvanzado(): AdvancedAnalysis {
     .sort((a, b) => b.count - a.count)
     .slice(0, 20);
 
-  // ========== 3. ANÁLISIS POR DECENAS ==========
+  // 3. DECENAS
   const decadas: DecadaAnalysis[] = [
-    { decada: 0, count: 0, pct: 0, numeros: [] }, // 1-10
-    { decada: 1, count: 0, pct: 0, numeros: [] }, // 11-20
-    { decada: 2, count: 0, pct: 0, numeros: [] }, // 21-30
-    { decada: 3, count: 0, pct: 0, numeros: [] }, // 31-40
-    { decada: 4, count: 0, pct: 0, numeros: [] }, // 41-49
+    { decada: 0, count: 0, pct: 0, numeros: [] },
+    { decada: 1, count: 0, pct: 0, numeros: [] },
+    { decada: 2, count: 0, pct: 0, numeros: [] },
+    { decada: 3, count: 0, pct: 0, numeros: [] },
+    { decada: 4, count: 0, pct: 0, numeros: [] },
   ];
-
   for (const sorteo of historico) {
     for (const num of sorteo.numeros) {
       const d = num <= 10 ? 0 : num <= 20 ? 1 : num <= 30 ? 2 : num <= 40 ? 3 : 4;
@@ -193,16 +154,14 @@ export function analisisAvanzado(): AdvancedAnalysis {
       if (!decadas[d].numeros.includes(num)) decadas[d].numeros.push(num);
     }
   }
-
   const totalNumeros = total * 6;
   for (const d of decadas) {
     d.pct = totalNumeros > 0 ? (d.count / totalNumeros) * 100 : 0;
     d.numeros.sort((a, b) => a - b);
   }
-
   decadas.sort((a, b) => b.count - a.count);
 
-  // ========== 4. PATRONES PAR/IMPAR ==========
+  // 4. PAR/IMPAR
   const parImparMap = new Map<string, number>();
   for (const sorteo of historico) {
     const pares = sorteo.numeros.filter(n => n % 2 === 0).length;
@@ -210,22 +169,18 @@ export function analisisAvanzado(): AdvancedAnalysis {
     const key = `${pares}P${impares}I`;
     parImparMap.set(key, (parImparMap.get(key) || 0) + 1);
   }
-
   const parImparPatterns: ParImparPattern[] = [...parImparMap.entries()]
     .map(([pattern, count]) => ({ pattern, count, pct: (count / total) * 100 }))
     .sort((a, b) => b.count - a.count);
 
-  // ========== 5. RANGOS DE SUMA ==========
+  // 5. SUMA
   const sumas = historico.map(s => s.numeros.reduce((a, b) => a + b, 0));
   const sumaRanges: SumaRange[] = [];
   const rangeSize = 20;
-  
   for (let start = 20; start <= 260; start += rangeSize) {
     const end = start + rangeSize;
     const count = sumas.filter(s => s >= start && s < end).length;
-    if (count > 0) {
-      sumaRanges.push({ range: `${start}-${end}`, count, pct: (count / total) * 100 });
-    }
+    if (count > 0) sumaRanges.push({ range: `${start}-${end}`, count, pct: (count / total) * 100 });
   }
   sumaRanges.sort((a, b) => b.count - a.count);
 
@@ -241,25 +196,17 @@ export function analisisAvanzado(): AdvancedAnalysis {
   };
 }
 
-/**
- * Genera 5 jugadas basadas en análisis avanzado tipo "Triplex"
- */
-export function generarJugadasAvanzadas(): JugadaAvanzada[] {
-  const analisis = analisisAvanzado();
-  const historico = HISTORICO_PRIMITIVA;
+export function generarJugadasAvanzadas(historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): JugadaAvanzada[] {
+  const analisis = analisisAvanzado(historico);
   const ultimo = historico[historico.length - 1];
-  const freq = calcularFrecuenciaSimple();
-  const atrasados = calcularAtrasadosSimple();
+  const freq = calcularFrecuenciaSimple(historico);
+  const atrasados = calcularAtrasadosSimple(historico);
 
   const jugadas: JugadaAvanzada[] = [];
 
-  // === JUGADA 1: Transiciones del Último Sorteo (Markov) ===
-  // Basada en qué números suelen seguir a los del último sorteo
+  // JUGADA 1: Transiciones Markov
   const transicionNums = new Set<number>();
-  for (const t of analisis.lastSorteoTransitions.slice(0, 6)) {
-    transicionNums.add(t.next);
-  }
-  // Completar con frecuentes si faltan
+  for (const t of analisis.lastSorteoTransitions.slice(0, 6)) transicionNums.add(t.next);
   for (const f of freq) {
     if (transicionNums.size >= 6) break;
     transicionNums.add(f.numero);
@@ -273,8 +220,7 @@ export function generarJugadasAvanzadas(): JugadaAvanzada[] {
     detalles: 'Basada en matrices de transición entre sorteos consecutivos',
   });
 
-  // === JUGADA 2: Co-Ocurrencia (Números Gemelos) ===
-  // Números que más veces han salido juntos en el mismo sorteo
+  // JUGADA 2: Co-Ocurrencia
   const coocNums = new Set<number>();
   for (const c of analisis.coOcurrence.slice(0, 8)) {
     coocNums.add(c.pair[0]);
@@ -290,12 +236,11 @@ export function generarJugadasAvanzadas(): JugadaAvanzada[] {
     detalles: `Top parejas: ${analisis.coOcurrence.slice(0, 3).map(c => `[${c.pair[0]}-${c.pair[1]}]`).join(', ')}`,
   });
 
-  // === JUGADA 3: Decenas + Frecuencia ===
-  // 2 números de cada una de las 3 decenas más frecuentes
+  // JUGADA 3: Decenas Dominantes
   const decadaNums = new Set<number>();
   const topDecadas = analisis.decadas.slice(0, 3);
   for (const d of topDecadas) {
-    const numsEnDecada = freq.filter(f => 
+    const numsEnDecada = freq.filter(f =>
       (d.decada === 0 && f.numero <= 10) ||
       (d.decada === 1 && f.numero > 10 && f.numero <= 20) ||
       (d.decada === 2 && f.numero > 20 && f.numero <= 30) ||
@@ -304,7 +249,6 @@ export function generarJugadasAvanzadas(): JugadaAvanzada[] {
     ).slice(0, 2);
     for (const n of numsEnDecada) decadaNums.add(n.numero);
   }
-  // Completar si faltan
   for (const f of freq) {
     if (decadaNums.size >= 6) break;
     decadaNums.add(f.numero);
@@ -318,12 +262,10 @@ export function generarJugadasAvanzadas(): JugadaAvanzada[] {
     detalles: 'Decenas más frecuentes en el historial',
   });
 
-  // === JUGADA 4: Patrón Par/Impar + Suma Óptima ===
-  // El patrón más frecuente (ej: 3P3I) + números cerca de la media
+  // JUGADA 4: Patrón Par/Impar
   const topPattern = analisis.parImparPatterns[0]?.pattern || '3P3I';
   const paresNecesarios = parseInt(topPattern[0]);
   const imparesNecesarios = parseInt(topPattern[2]);
-  
   const pares = freq.filter(f => f.numero % 2 === 0).map(f => f.numero).slice(0, paresNecesarios);
   const impares = freq.filter(f => f.numero % 2 !== 0).map(f => f.numero).slice(0, imparesNecesarios);
   jugadas.push({
@@ -332,11 +274,10 @@ export function generarJugadasAvanzadas(): JugadaAvanzada[] {
     numeros: [...pares, ...impares].sort((a, b) => a - b),
     confianza: 86,
     color: 'bg-green-600',
-    detalles: `Este patrónn aparece en el ${analisis.parImparPatterns[0]?.pct.toFixed(1)}% de los sorteos`,
+    detalles: `Este patrón aparece en el ${analisis.parImparPatterns[0]?.pct.toFixed(1)}% de los sorteos`,
   });
 
-  // === JUGADA 5: Atrasados + Transiciones Fuertes ===
-  // 3 números atrasados + 3 números de transiciones fuertes
+  // JUGADA 5: Atrasados + Transiciones
   const mixNums = new Set<number>();
   for (const a of atrasados.slice(0, 3)) mixNums.add(a.numero);
   for (const t of analisis.strongestTransitionLinks.slice(0, 6)) {
@@ -356,19 +297,19 @@ export function generarJugadasAvanzadas(): JugadaAvanzada[] {
 }
 
 // Helpers simples
-function calcularFrecuenciaSimple(): { numero: number; frecuencia: number }[] {
+function calcularFrecuenciaSimple(historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): { numero: number; frecuencia: number }[] {
   const freq = new Map<number, number>();
   for (let i = 1; i <= 49; i++) freq.set(i, 0);
-  HISTORICO_PRIMITIVA.forEach(s => s.numeros.forEach(n => freq.set(n, (freq.get(n) || 0) + 1)));
+  historico.forEach(s => s.numeros.forEach(n => freq.set(n, (freq.get(n) || 0) + 1)));
   return Array.from(freq.entries()).map(([numero, frecuencia]) => ({ numero, frecuencia }))
     .sort((a, b) => b.frecuencia - a.frecuencia);
 }
 
-function calcularAtrasadosSimple(): { numero: number; sorteosSinSalir: number }[] {
+function calcularAtrasadosSimple(historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): { numero: number; sorteosSinSalir: number }[] {
   const ultima = new Map<number, number>();
   for (let i = 1; i <= 49; i++) ultima.set(i, -1);
-  HISTORICO_PRIMITIVA.forEach((s, idx) => s.numeros.forEach(n => ultima.set(n, idx)));
-  const total = HISTORICO_PRIMITIVA.length;
+  historico.forEach((s, idx) => s.numeros.forEach(n => ultima.set(n, idx)));
+  const total = historico.length;
   return Array.from(ultima.entries())
     .map(([numero, ultIdx]) => ({ numero, sorteosSinSalir: ultIdx >= 0 ? total - 1 - ultIdx : total }))
     .sort((a, b) => b.sorteosSinSalir - a.sorteosSinSalir);
