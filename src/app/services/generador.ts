@@ -1,5 +1,4 @@
-
-generador_ts = '''import { HISTORICO_PRIMITIVA } from '../../data/primitiva-historico'
+import { HISTORICO_PRIMITIVA } from '../../data/primitiva-historico'
 import { SorteoPrimitiva } from '../../types'
 import { calcularFrecuenciaNumeros, numerosAtrasados, estadisticasSuma } from '../../utils/estadisticas'
 
@@ -234,10 +233,3 @@ export function verificarCombinacion(numeros: number[]): {
 
   return { yaSalio: false }
 }
-'''
-
-with open("/mnt/agents/output/generador.ts", "w", encoding="utf-8") as f:
-    f.write(generador_ts)
-
-print("✅ generador.ts corregido guardado")
-print(f"📏 {len(generador_ts)} caracteres")
