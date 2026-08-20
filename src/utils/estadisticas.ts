@@ -1,16 +1,16 @@
 import { HISTORICO_PRIMITIVA } from '../data/primitiva-historico';
-import { FrecuenciaNumero, EstadisticasGlobales } from '../types';
+import { SorteoPrimitiva, FrecuenciaNumero, EstadisticasGlobales } from '../types';
 
 /** Calcula la frecuencia de cada número principal (1-49) */
-export function calcularFrecuenciaNumeros(): FrecuenciaNumero[] {
+export function calcularFrecuenciaNumeros(historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): FrecuenciaNumero[] {
   const freq = new Map<number, number>();
   for (let i = 1; i <= 49; i++) freq.set(i, 0);
 
-  HISTORICO_PRIMITIVA.forEach(s => {
+  historico.forEach(s => {
     s.numeros.forEach(n => freq.set(n, (freq.get(n) || 0) + 1));
   });
 
-  const total = HISTORICO_PRIMITIVA.length * 6;
+  const total = historico.length * 6;
   return Array.from(freq.entries())
     .map(([numero, frecuencia]) => ({
       numero,
@@ -21,15 +21,15 @@ export function calcularFrecuenciaNumeros(): FrecuenciaNumero[] {
 }
 
 /** Calcula la frecuencia de complementarios (1-49) */
-export function calcularFrecuenciaComplementarios(): FrecuenciaNumero[] {
+export function calcularFrecuenciaComplementarios(historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): FrecuenciaNumero[] {
   const freq = new Map<number, number>();
   for (let i = 1; i <= 49; i++) freq.set(i, 0);
 
-  HISTORICO_PRIMITIVA.forEach(s => {
+  historico.forEach(s => {
     freq.set(s.complementario, (freq.get(s.complementario) || 0) + 1);
   });
 
-  const total = HISTORICO_PRIMITIVA.length;
+  const total = historico.length;
   return Array.from(freq.entries())
     .map(([numero, frecuencia]) => ({
       numero,
@@ -40,12 +40,12 @@ export function calcularFrecuenciaComplementarios(): FrecuenciaNumero[] {
 }
 
 /** Calcula la frecuencia de reintegros (0-9) */
-export function calcularFrecuenciaReintegros(): FrecuenciaNumero[] {
+export function calcularFrecuenciaReintegros(historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): FrecuenciaNumero[] {
   const freq = new Map<number, number>();
   for (let i = 0; i <= 9; i++) freq.set(i, 0);
 
   let total = 0;
-  HISTORICO_PRIMITIVA.forEach(s => {
+  historico.forEach(s => {
     if (s.reintegro !== null) {
       freq.set(s.reintegro, (freq.get(s.reintegro) || 0) + 1);
       total++;
@@ -62,17 +62,17 @@ export function calcularFrecuenciaReintegros(): FrecuenciaNumero[] {
 }
 
 /** Números que hace más sorteos que no salen (atrasados) */
-export function numerosAtrasados(): { numero: number; sorteosSinSalir: number }[] {
+export function numerosAtrasados(historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): { numero: number; sorteosSinSalir: number }[] {
   const ultimaAparicion = new Map<number, number>();
   for (let i = 1; i <= 49; i++) ultimaAparicion.set(i, -1);
 
-  HISTORICO_PRIMITIVA.forEach((s, idx) => {
+  historico.forEach((s, idx) => {
     s.numeros.forEach(n => {
       ultimaAparicion.set(n, idx);
     });
   });
 
-  const total = HISTORICO_PRIMITIVA.length;
+  const total = historico.length;
   return Array.from(ultimaAparicion.entries())
     .map(([numero, ultIdx]) => ({
       numero,
@@ -82,10 +82,10 @@ export function numerosAtrasados(): { numero: number; sorteosSinSalir: number }[
 }
 
 /** Distribución pares/impares en todo el histórico */
-export function distribucionParImpar(): { pares: number; impares: number } {
+export function distribucionParImpar(historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): { pares: number; impares: number } {
   let pares = 0;
   let impares = 0;
-  HISTORICO_PRIMITIVA.forEach(s => {
+  historico.forEach(s => {
     s.numeros.forEach(n => {
       if (n % 2 === 0) pares++;
       else impares++;
@@ -95,8 +95,8 @@ export function distribucionParImpar(): { pares: number; impares: number } {
 }
 
 /** Estadísticas de la suma de los 6 números */
-export function estadisticasSuma(): { media: number; minima: number; maxima: number } {
-  const sumas = HISTORICO_PRIMITIVA.map(s => s.numeros.reduce((a, b) => a + b, 0));
+export function estadisticasSuma(historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): { media: number; minima: number; maxima: number } {
+  const sumas = historico.map(s => s.numeros.reduce((a, b) => a + b, 0));
   const media = sumas.reduce((a, b) => a + b, 0) / sumas.length;
   return {
     media: Number(media.toFixed(2)),
@@ -106,18 +106,18 @@ export function estadisticasSuma(): { media: number; minima: number; maxima: num
 }
 
 /** Genera un informe completo de estadísticas */
-export function generarEstadisticasCompletas(): EstadisticasGlobales {
-  const freqNums = calcularFrecuenciaNumeros();
-  const freqComp = calcularFrecuenciaComplementarios();
-  const freqReint = calcularFrecuenciaReintegros();
-  const atrasados = numerosAtrasados();
-  const parImpar = distribucionParImpar();
-  const sumaStats = estadisticasSuma();
+export function generarEstadisticasCompletas(historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): EstadisticasGlobales {
+  const freqNums = calcularFrecuenciaNumeros(historico);
+  const freqComp = calcularFrecuenciaComplementarios(historico);
+  const freqReint = calcularFrecuenciaReintegros(historico);
+  const atrasados = numerosAtrasados(historico);
+  const parImpar = distribucionParImpar(historico);
+  const sumaStats = estadisticasSuma(historico);
 
   return {
-    totalSorteos: HISTORICO_PRIMITIVA.length,
-    fechaInicio: HISTORICO_PRIMITIVA[0]?.fecha ?? '',
-    fechaFin: HISTORICO_PRIMITIVA[HISTORICO_PRIMITIVA.length - 1]?.fecha ?? '',
+    totalSorteos: historico.length,
+    fechaInicio: historico[0]?.fecha ?? '',
+    fechaFin: historico[historico.length - 1]?.fecha ?? '',
     frecuenciaNumeros: freqNums,
     frecuenciaComplementarios: freqComp,
     frecuenciaReintegros: freqReint,
@@ -130,3 +130,4 @@ export function generarEstadisticasCompletas(): EstadisticasGlobales {
     sumaMaxima: sumaStats.maxima,
   };
 }
+
