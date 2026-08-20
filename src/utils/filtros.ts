@@ -2,8 +2,8 @@ import { HISTORICO_PRIMITIVA } from '../data/primitiva-historico';
 import { SorteoPrimitiva, FiltroSorteo } from '../types';
 
 /** Filtra sorteos según criterios */
-export function filtrarSorteos(filtro: FiltroSorteo): SorteoPrimitiva[] {
-  return HISTORICO_PRIMITIVA.filter(s => {
+export function filtrarSorteos(filtro: FiltroSorteo, historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): SorteoPrimitiva[] {
+  return historico.filter(s => {
     if (filtro.anio !== undefined) {
       const anio = parseInt(s.fecha.split('/')[2], 10);
       if (anio !== filtro.anio) return false;
@@ -30,20 +30,20 @@ export function filtrarSorteos(filtro: FiltroSorteo): SorteoPrimitiva[] {
 }
 
 /** Busca sorteos donde salió una combinación exacta de números (sin importar orden) */
-export function buscarCombinacion(numeros: number[]): SorteoPrimitiva[] {
+export function buscarCombinacion(numeros: number[], historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): SorteoPrimitiva[] {
   const set = new Set(numeros);
   if (set.size !== 6) throw new Error('Debes proporcionar exactamente 6 números únicos');
-  return HISTORICO_PRIMITIVA.filter(s =>
+  return historico.filter(s =>
     s.numeros.every(n => set.has(n))
   );
 }
 
 /** Obtiene los últimos N sorteos */
-export function ultimosSorteos(n: number = 10): SorteoPrimitiva[] {
-  return HISTORICO_PRIMITIVA.slice(-n);
+export function ultimosSorteos(n: number = 10, historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): SorteoPrimitiva[] {
+  return historico.slice(-n);
 }
 
 /** Obtiene sorteos de un año específico */
-export function sorteosPorAnio(anio: number): SorteoPrimitiva[] {
-  return HISTORICO_PRIMITIVA.filter(s => s.fecha.endsWith(`/${anio}`));
+export function sorteosPorAnio(anio: number, historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): SorteoPrimitiva[] {
+  return historico.filter(s => s.fecha.endsWith(`/${anio}`));
 }
