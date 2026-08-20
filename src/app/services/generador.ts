@@ -10,10 +10,10 @@ export interface Jugada {
   color: string
 }
 
-export function generarJugadas(): Jugada[] {
-  const freq = calcularFrecuenciaNumeros()
-  const atrasadosList = numerosAtrasados()
-  const sumaStats = estadisticasSuma()
+export function generarJugadas(historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): Jugada[] {
+  const freq = calcularFrecuenciaNumeros(historico)
+  const atrasadosList = numerosAtrasados(historico)
+  const sumaStats = estadisticasSuma(historico)
 
   const numerosCalientes = freq.map(f => f.numero)
   const numerosAtrasadosList = atrasadosList.map(a => a.numero)
@@ -219,13 +219,16 @@ function generarCombinacionDecenas(
   return Array.from(seleccionados).sort((a, b) => a - b)
 }
 
-export function verificarCombinacion(numeros: number[]): {
+export function verificarCombinacion(
+  numeros: number[],
+  historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA
+): {
   yaSalio: boolean
   sorteo?: SorteoPrimitiva
 } {
   const set = new Set(numeros)
 
-  for (const sorteo of HISTORICO_PRIMITIVA) {
+  for (const sorteo of historico) {
     if (sorteo.numeros.every(n => set.has(n))) {
       return { yaSalio: true, sorteo }
     }
