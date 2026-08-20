@@ -1,22 +1,45 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { generarJugadasAvanzadas, JugadaAvanzada } from './services/analisis-avanzado'
 import { verificarCombinacion } from './services/generador'
 import { generarEstadisticasCompletas } from '../utils/estadisticas'
 import { ultimosSorteos } from '../utils/filtros'
+import { useHistorico } from './hooks/useHistorico'
 
 function App() {
-  const [stats] = useState(() => generarEstadisticasCompletas())
-  const [jugadas, setJugadas] = useState<JugadaAvanzada[]>(() => generarJugadasAvanzadas())
+  const { historico, cargando, actualizando, ultimaActualizacion, actualizar, totalSorteos, ultimoSorteo } = useHistorico()
+
+  const [stats, setStats] = useState(() => generarEstadisticasCompletas(historico))
+  const [jugadas, setJugadas] = useState<JugadaAvanzada[]>(() => generarJugadasAvanzadas(historico))
   const [verificaciones, setVerificaciones] = useState(() =>
-    jugadas.map(j => verificarCombinacion(j.numeros))
+    jugadas.map(j => verificarCombinacion(j.numeros, historico))
   )
   const [tab, setTab] = useState<'stats' | 'numbers' | 'last'>('stats')
-  const ultimo = ultimosSorteos(1)[0]
+
+  // Recalcular estadísticas cuando cambia el histórico
+  useEffect(() => {
+    if (historico.length > 0) {
+      setStats(generarEstadisticasCompletas(historico))
+      const nuevasJugadas = generarJugadasAvanzadas(historico)
+      setJugadas(nuevasJugadas)
+      setVerificaciones(nuevasJugadas.map(j => verificarCombinacion(j.numeros, historico)))
+    }
+  }, [historico])
 
   const generarNuevasJugadas = () => {
-    const nuevas = generarJugadasAvanzadas()
+    const nuevas = generarJugadasAvanzadas(historico)
     setJugadas(nuevas)
-    setVerificaciones(nuevas.map(j => verificarCombinacion(j.numeros)))
+    setVerificaciones(nuevas.map(j => verificarCombinacion(j.numeros, historico)))
+  }
+
+  const handleActualizar = async () => {
+    const resultado = await actualizar()
+    if (resultado.nuevo) {
+      alert(`✅ Nuevo sorteo añadido: ${resultado.sorteo?.fecha}`)
+    } else if (resultado.sorteo) {
+      alert('ℹ️ El sorteo ya estaba en el historial')
+    } else {
+      alert('❌ No se pudo obtener el sorteo de la LAE')
+    }
   }
 
   const renderBalls = (nums: number[], colorClass: string) => (
@@ -29,14 +52,45 @@ function App() {
     </div>
   )
 
+  if (cargando) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-yellow-400 text-xl font-bold">
+        Cargando histórico...
+      </div>
+    )
+  }
+
+  const ultimo = ultimoSorteo ?? ultimosSorteos(1, historico)[0]
+
   return (
     <div className="min-h-screen p-4 max-w-md mx-auto pb-20">
       <h1 className="text-3xl font-black text-center text-yellow-400 mb-2 drop-shadow-md">
         🎰 La Primitiva Pro
       </h1>
-      <p className="text-center text-gray-400 text-sm mb-4">
-        {stats.totalSorteos.toLocaleString()} sorteos analizados
+      <p className="text-center text-gray-400 text-sm mb-2">
+        {totalSorteos.toLocaleString()} sorteos analizados
       </p>
+
+      {/* Botón de actualizar */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={handleActualizar}
+          disabled={actualizando}
+          className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${
+            actualizando
+              ? 'bg-slate-600 text-gray-400 cursor-not-allowed'
+              : 'bg-green-600 hover:bg-green-500 text-white'
+          }`}
+        >
+          {actualizando ? '⏳ Actualizando...' : '🔄 Actualizar desde LAE'}
+        </button>
+      </div>
+
+      {ultimaActualizacion && (
+        <p className="text-center text-xs text-gray-500 mb-3">
+          Última actualización: {ultimaActualizacion}
+        </p>
+      )}
 
       <div className="flex gap-2 mb-4">
         {[
@@ -99,7 +153,7 @@ function App() {
         <div className="space-y-4">
           <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
             <h2 className="text-lg font-bold text-yellow-400 mb-1">🎰 5 Jugadas Inteligentes</h2>
-            <p className="text-xs text-gray-400 mb-3">Análisis avanzado: Markov, co-ocurrencia, decenas, patrones</p>
+            <p className="text-xs text-gray-400 mb-3">Análisis avanzado: Markov, co-occurrencia, decenas, patrones</p>
 
             {jugadas.map((jugada, idx) => (
               <div key={idx} className="mb-4 last:mb-0 bg-slate-900 rounded-lg p-3">
@@ -166,5 +220,3 @@ function App() {
 }
 
 export default App
-
-
