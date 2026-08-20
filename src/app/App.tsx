@@ -1,29 +1,23 @@
-import { useState } from 'react';
-import { useHistorico } from './hooks/useHistorico';
-import { generarEstadisticasCompletas } from '../utils/estadisticas';
-import { generarBoletoEstrategias } from '../utils/prediccion';
-import { ultimosSorteos } from '../utils/filtros';
+import { useState } from 'react'
+import { generarJugadasAvanzadas, JugadaAvanzada } from './services/analisis-avanzado'
+import { verificarCombinacion } from './services/generador'
+import { generarEstadisticasCompletas } from '../utils/estadisticas'
+import { ultimosSorteos } from '../utils/filtros'
 
 function App() {
-  const { historico, cargando, actualizando, ultimaActualizacion, actualizar, totalSorteos, ultimoSorteo } = useHistorico();
-  const [stats] = useState(() => generarEstadisticasCompletas());
-  const [boletos, setBoletos] = useState(() => generarBoletoEstrategias());
-  const [tab, setTab] = useState<'stats' | 'numbers' | 'last'>('stats');
-  const [mensaje, setMensaje] = useState('');
+  const [stats] = useState(() => generarEstadisticasCompletas())
+  const [jugadas, setJugadas] = useState<JugadaAvanzada[]>(() => generarJugadasAvanzadas())
+  const [verificaciones, setVerificaciones] = useState(() =>
+    jugadas.map(j => verificarCombinacion(j.numeros))
+  )
+  const [tab, setTab] = useState<'stats' | 'numbers' | 'last'>('stats')
+  const ultimo = ultimosSorteos(1)[0]
 
-  const generarNuevos = () => setBoletos(generarBoletoEstrategias());
-
-  const handleActualizar = async () => {
-    const resultado = await actualizar();
-    if (resultado.nuevo) {
-      setMensaje(`✅ Nuevo sorteo añadido: ${resultado.sorteo?.fecha}`);
-    } else if (resultado.sorteo) {
-      setMensaje(`ℹ️ Ya tienes el último sorteo (${resultado.sorteo.fecha})`);
-    } else {
-      setMensaje('❌ No se pudo conectar con LAE');
-    }
-    setTimeout(() => setMensaje(''), 3000);
-  };
+  const generarNuevasJugadas = () => {
+    const nuevas = generarJugadasAvanzadas()
+    setJugadas(nuevas)
+    setVerificaciones(nuevas.map(j => verificarCombinacion(j.numeros)))
+  }
 
   const renderBalls = (nums: number[], colorClass: string) => (
     <div className="flex flex-wrap gap-2 mt-1">
@@ -33,55 +27,21 @@ function App() {
         </span>
       ))}
     </div>
-  );
-
-  if (cargando) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400 mx-auto mb-4"></div>
-          <p>Cargando datos...</p>
-        </div>
-      </div>
-    );
-  }
+  )
 
   return (
     <div className="min-h-screen p-4 max-w-md mx-auto pb-20">
       <h1 className="text-3xl font-black text-center text-yellow-400 mb-2 drop-shadow-md">
         🎰 La Primitiva Pro
       </h1>
-      <p className="text-center text-gray-400 text-sm mb-2">
-        {totalSorteos.toLocaleString()} sorteos analizados
+      <p className="text-center text-gray-400 text-sm mb-4">
+        {stats.totalSorteos.toLocaleString()} sorteos analizados
       </p>
-
-      {/* Botón de actualización */}
-      <div className="flex gap-2 mb-3">
-        <button
-          onClick={handleActualizar}
-          disabled={actualizando}
-          className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white font-bold py-2 px-4 rounded-lg text-sm transition"
-        >
-          {actualizando ? '⏳ Actualizando...' : '🔄 Buscar nuevo sorteo'}
-        </button>
-      </div>
-
-      {mensaje && (
-        <div className="bg-slate-700 text-white text-sm p-2 rounded-lg mb-3 text-center">
-          {mensaje}
-        </div>
-      )}
-
-      {ultimaActualizacion && (
-        <p className="text-center text-xs text-gray-500 mb-3">
-          Última actualización: {ultimaActualizacion}
-        </p>
-      )}
 
       <div className="flex gap-2 mb-4">
         {[
           { key: 'stats' as const, label: '📊 Estadísticas' },
-          { key: 'numbers' as const, label: '🎯 Números' },
+          { key: 'numbers' as const, label: '🎰 Jugadas' },
           { key: 'last' as const, label: '📅 Último' },
         ].map(t => (
           <button
@@ -138,40 +98,73 @@ function App() {
       {tab === 'numbers' && (
         <div className="space-y-4">
           <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-            <h2 className="text-lg font-bold text-green-400 mb-2">⚖️ Ponderada</h2>
-            {renderBalls(boletos.ponderada, 'bg-green-600 text-white')}
+            <h2 className="text-lg font-bold text-yellow-400 mb-1">🎰 5 Jugadas Inteligentes</h2>
+            <p className="text-xs text-gray-400 mb-3">Análisis avanzado: Markov, co-ocurrencia, decenas, patrones</p>
+
+            {jugadas.map((jugada, idx) => (
+              <div key={idx} className="mb-4 last:mb-0 bg-slate-900 rounded-lg p-3">
+                <div className="flex justify-between items-center mb-2">
+                  <div>
+                    <p className="text-sm font-bold text-white">{idx + 1}. {jugada.nombre}</p>
+                    <p className="text-xs text-gray-500">{jugada.estrategia}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className={`text-xs px-2 py-1 rounded-full ${
+                      jugada.confianza >= 85 ? 'bg-green-900 text-green-300' :
+                      jugada.confianza >= 80 ? 'bg-yellow-900 text-yellow-300' :
+                      'bg-red-900 text-red-300'
+                    }`}>
+                      {jugada.confianza}% confianza
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {jugada.numeros.map(n => (
+                    <span key={n} className={`${jugada.color} text-white w-10 h-10 flex items-center justify-center rounded-full font-bold text-lg shadow-lg`}>
+                      {n}
+                    </span>
+                  ))}
+                </div>
+
+                <p className="text-xs text-gray-500 mt-2 italic">{jugada.detalles}</p>
+
+                {verificaciones[idx]?.yaSalio && (
+                  <p className="text-xs text-red-400 mt-2">
+                    ⚠️ Esta combinación ya salió el {verificaciones[idx].sorteo?.fecha}
+                  </p>
+                )}
+              </div>
+            ))}
+
+            <button
+              onClick={generarNuevasJugadas}
+              className="w-full bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-black font-black py-4 rounded-xl text-lg shadow-lg transition transform active:scale-95 mt-4"
+            >
+              🔄 Generar Nuevas Jugadas
+            </button>
           </div>
-          <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-            <h2 className="text-lg font-bold text-purple-400 mb-2">⏳ Atrasados</h2>
-            {renderBalls(boletos.atrasados, 'bg-purple-600 text-white')}
-          </div>
-          <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-            <h2 className="text-lg font-bold text-orange-400 mb-2">🎲 Aleatoria</h2>
-            {renderBalls(boletos.aleatoria, 'bg-orange-600 text-white')}
-          </div>
-          <button onClick={generarNuevos} className="w-full bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-black font-black py-4 rounded-xl text-lg shadow-lg transition transform active:scale-95">
-            🔄 Generar Nuevas Combinaciones
-          </button>
         </div>
       )}
 
-      {tab === 'last' && ultimoSorteo && (
+      {tab === 'last' && (
         <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
           <h2 className="text-lg font-bold text-gray-300 mb-2">📅 Último Sorteo Registrado</h2>
-          <p className="text-sm text-gray-400 mb-3">Fecha: <span className="text-white font-bold">{ultimoSorteo.fecha}</span></p>
+          <p className="text-sm text-gray-400 mb-3">Fecha: <span className="text-white font-bold">{ultimo.fecha}</span></p>
           <p className="text-xs text-gray-500 mb-1">Números principales</p>
-          {renderBalls(ultimoSorteo.numeros, 'bg-gray-700 text-white')}
+          {renderBalls(ultimo.numeros, 'bg-gray-700 text-white')}
           <div className="mt-4 grid grid-cols-2 gap-4">
-            <div className="bg-slate-900 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">Complementario</p><p className="text-2xl font-black text-yellow-400">{ultimoSorteo.complementario}</p></div>
-            <div className="bg-slate-900 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">Reintegro</p><p className="text-2xl font-black text-yellow-400">{ultimoSorteo.reintegro ?? 'N/D'}</p></div>
+            <div className="bg-slate-900 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">Complementario</p><p className="text-2xl font-black text-yellow-400">{ultimo.complementario}</p></div>
+            <div className="bg-slate-900 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">Reintegro</p><p className="text-2xl font-black text-yellow-400">{ultimo.reintegro ?? 'N/D'}</p></div>
           </div>
         </div>
       )}
 
       <p className="text-center text-xs text-gray-600 mt-6 mb-4">⚠️ La lotería es un juego de azar. Uso educativo.</p>
     </div>
-  );
+  )
 }
 
-export default App;
+export default App
+
 
