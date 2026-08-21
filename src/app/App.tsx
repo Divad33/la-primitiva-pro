@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useHistorico } from './hooks/useHistorico'
 import { generarJugadasAvanzadas, JugadaAvanzada } from './services/analisis-avanzado'
 import { verificarCombinacion } from './services/generador'
-import type { SorteoPrimitiva } from '../../types/index'
+import type { SorteoPrimitiva } from '../types/index'
 
 function App() {
   const { historico, cargando, actualizando, ultimaActualizacion, actualizar, totalSorteos, ultimoSorteo } = useHistorico()
