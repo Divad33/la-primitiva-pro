@@ -2,20 +2,15 @@ import { useState, useMemo } from 'react'
 import { useHistorico } from './hooks/useHistorico'
 import { generarJugadasAvanzadas, JugadaAvanzada } from './services/analisis-avanzado'
 import { verificarCombinacion } from './services/generador'
-import { SorteoPrimitiva } from '../../types'
+import type { SorteoPrimitiva } from '../../types/index'
 
 function App() {
   const { historico, cargando, actualizando, ultimaActualizacion, actualizar, totalSorteos, ultimoSorteo } = useHistorico()
   const [tab, setTab] = useState<'stats' | 'numbers' | 'last'>('stats')
   const [mensaje, setMensaje] = useState('')
 
-  // Estadisticas dinamicas usando el historico completo (DB local)
   const stats = useMemo(() => generarEstadisticasDinamicas(historico), [historico])
-
-  // 5 jugadas avanzadas usando el historico dinamico
   const jugadas = useMemo(() => generarJugadasAvanzadas(historico), [historico])
-
-  // Verificar si alguna jugada ya salio
   const verificaciones = useMemo(() =>
     jugadas.map((j: JugadaAvanzada) => verificarCombinacion(j.numeros))
   , [jugadas])
@@ -34,7 +29,6 @@ function App() {
   }
 
   const generarNuevasJugadas = () => {
-    // Forzar re-render cambiando de pestana y volviendo
     const currentTab = tab
     setTab('stats')
     setTimeout(() => setTab(currentTab), 50)
@@ -42,7 +36,7 @@ function App() {
 
   const renderBalls = (nums: number[], colorClass: string) => (
     <div className="flex flex-wrap gap-2 mt-1">
-      {nums.map(n => (
+      {nums.map((n: number) => (
         <span key={n} className={`${colorClass} w-10 h-10 flex items-center justify-center rounded-full font-bold text-lg shadow-lg`}>
           {n}
         </span>
@@ -70,7 +64,6 @@ function App() {
         {totalSorteos.toLocaleString()} sorteos analizados
       </p>
 
-      {/* Boton de actualizacion */}
       <div className="flex gap-2 mb-3">
         <button
           onClick={handleActualizar}
@@ -124,7 +117,7 @@ function App() {
           <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
             <h2 className="text-lg font-bold text-gray-300 mb-2">⏳ Mas Atrasados</h2>
             <div className="space-y-1">
-              {stats.numerosMasAtrasados.slice(0, 5).map(a => (
+              {stats.numerosMasAtrasados.slice(0, 5).map((a: { numero: number; sorteosSinSalir: number }) => (
                 <div key={a.numero} className="flex justify-between text-sm">
                   <span className="font-bold text-yellow-400">#{a.numero}</span>
                   <span className="text-gray-400">{a.sorteosSinSalir} sorteos sin salir</span>
@@ -175,7 +168,7 @@ function App() {
                 </div>
 
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {jugada.numeros.map(n => (
+                  {jugada.numeros.map((n: number) => (
                     <span key={n} className={`${jugada.color} text-white w-10 h-10 flex items-center justify-center rounded-full font-bold text-lg shadow-lg`}>
                       {n}
                     </span>
@@ -220,9 +213,6 @@ function App() {
   )
 }
 
-/**
- * Genera estadisticas usando el historico dinamico (DB local)
- */
 function generarEstadisticasDinamicas(historico: SorteoPrimitiva[]) {
   if (historico.length === 0) {
     return {
@@ -242,32 +232,32 @@ function generarEstadisticasDinamicas(historico: SorteoPrimitiva[]) {
   const total = historico.length
   const freq = new Map<number, number>()
   for (let i = 1; i <= 49; i++) freq.set(i, 0)
-  historico.forEach(s => s.numeros.forEach(n => freq.set(n, (freq.get(n) || 0) + 1)))
+  historico.forEach((s: SorteoPrimitiva) => s.numeros.forEach((n: number) => freq.set(n, (freq.get(n) || 0) + 1)))
 
   const frecuenciaNumeros = Array.from(freq.entries())
-    .map(([numero, frecuencia]) => ({ numero, frecuencia, porcentaje: Number(((frecuencia / (total * 6)) * 100).toFixed(2)) }))
-    .sort((a, b) => b.frecuencia - a.frecuencia)
+    .map(([numero, frecuencia]: [number, number]) => ({ numero, frecuencia, porcentaje: Number(((frecuencia / (total * 6)) * 100).toFixed(2)) }))
+    .sort((a: { frecuencia: number }, b: { frecuencia: number }) => b.frecuencia - a.frecuencia)
 
   const ultimaAparicion = new Map<number, number>()
   for (let i = 1; i <= 49; i++) ultimaAparicion.set(i, -1)
-  historico.forEach((s, idx) => s.numeros.forEach(n => ultimaAparicion.set(n, idx)))
+  historico.forEach((s: SorteoPrimitiva, idx: number) => s.numeros.forEach((n: number) => ultimaAparicion.set(n, idx)))
 
   const atrasados = Array.from(ultimaAparicion.entries())
-    .map(([numero, ultIdx]) => ({ numero, sorteosSinSalir: ultIdx >= 0 ? total - 1 - ultIdx : total }))
-    .sort((a, b) => b.sorteosSinSalir - a.sorteosSinSalir)
+    .map(([numero, ultIdx]: [number, number]) => ({ numero, sorteosSinSalir: ultIdx >= 0 ? total - 1 - ultIdx : total }))
+    .sort((a: { sorteosSinSalir: number }, b: { sorteosSinSalir: number }) => b.sorteosSinSalir - a.sorteosSinSalir)
 
   let pares = 0, impares = 0
-  historico.forEach(s => s.numeros.forEach(n => { if (n % 2 === 0) pares++; else impares++ }))
+  historico.forEach((s: SorteoPrimitiva) => s.numeros.forEach((n: number) => { if (n % 2 === 0) pares++; else impares++ }))
 
-  const sumas = historico.map(s => s.numeros.reduce((a, b) => a + b, 0))
-  const media = sumas.reduce((a, b) => a + b, 0) / sumas.length
+  const sumas = historico.map((s: SorteoPrimitiva) => s.numeros.reduce((a: number, b: number) => a + b, 0))
+  const media = sumas.reduce((a: number, b: number) => a + b, 0) / sumas.length
 
   return {
     totalSorteos: total,
     fechaInicio: historico[historico.length - 1]?.fecha ?? '',
     fechaFin: historico[0]?.fecha ?? '',
-    numerosCalientes: frecuenciaNumeros.slice(0, 10).map(f => f.numero),
-    numerosFrios: frecuenciaNumeros.slice(-10).map(f => f.numero),
+    numerosCalientes: frecuenciaNumeros.slice(0, 10).map((f: { numero: number }) => f.numero),
+    numerosFrios: frecuenciaNumeros.slice(-10).map((f: { numero: number }) => f.numero),
     numerosMasAtrasados: atrasados.slice(0, 10),
     paresImpares: { pares, impares },
     sumaMedia: Number(media.toFixed(2)),
