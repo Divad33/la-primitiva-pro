@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { SorteoPrimitiva } from '../../types';
-import { obtenerHistoricoCompleto, actualizarDesdeLAE } from '../services/loteria';
+import { obtenerHistoricoCompleto, actualizarDesdeProxy } from '../services/loteria';
 
 export function useHistorico() {
   const [historico, setHistorico] = useState<SorteoPrimitiva[]>([]);
@@ -8,22 +8,23 @@ export function useHistorico() {
   const [actualizando, setActualizando] = useState(false);
   const [ultimaActualizacion, setUltimaActualizacion] = useState<string>('');
 
+  // Cargar datos al inicio (sincroniza empaquetado + local)
   useEffect(() => {
     cargarDatos();
   }, []);
 
-  const cargarDatos = async () => {
+  const cargarDatos = () => {
     setCargando(true);
-    const datos = await obtenerHistoricoCompleto();
+    const datos = obtenerHistoricoCompleto();
     setHistorico(datos);
     setCargando(false);
   };
 
   const actualizar = async () => {
     setActualizando(true);
-    const resultado = await actualizarDesdeLAE();
+    const resultado = await actualizarDesdeProxy();
     if (resultado.nuevo) {
-      await cargarDatos();
+      cargarDatos(); // Recargar desde DB local
       setUltimaActualizacion(new Date().toLocaleString('es-ES'));
     }
     setActualizando(false);
@@ -37,6 +38,6 @@ export function useHistorico() {
     ultimaActualizacion,
     actualizar,
     totalSorteos: historico.length,
-    ultimoSorteo: historico.length > 0 ? historico[historico.length - 1] : null,
+    ultimoSorteo: historico.length > 0 ? historico[0] : null, // [0] = más reciente
   };
 }
