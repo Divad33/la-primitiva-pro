@@ -1,45 +1,43 @@
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
+import { useHistorico } from './hooks/useHistorico'
 import { generarJugadasAvanzadas, JugadaAvanzada } from './services/analisis-avanzado'
 import { verificarCombinacion } from './services/generador'
-import { generarEstadisticasCompletas } from '../utils/estadisticas'
-import { ultimosSorteos } from '../utils/filtros'
-import { useHistorico } from './hooks/useHistorico'
+import { SorteoPrimitiva } from '../../types'
 
 function App() {
   const { historico, cargando, actualizando, ultimaActualizacion, actualizar, totalSorteos, ultimoSorteo } = useHistorico()
-
-  const [stats, setStats] = useState(() => generarEstadisticasCompletas(historico))
-  const [jugadas, setJugadas] = useState<JugadaAvanzada[]>(() => generarJugadasAvanzadas(historico))
-  const [verificaciones, setVerificaciones] = useState(() =>
-    jugadas.map(j => verificarCombinacion(j.numeros, historico))
-  )
   const [tab, setTab] = useState<'stats' | 'numbers' | 'last'>('stats')
+  const [mensaje, setMensaje] = useState('')
 
-  // Recalcular estadísticas cuando cambia el histórico
-  useEffect(() => {
-    if (historico.length > 0) {
-      setStats(generarEstadisticasCompletas(historico))
-      const nuevasJugadas = generarJugadasAvanzadas(historico)
-      setJugadas(nuevasJugadas)
-      setVerificaciones(nuevasJugadas.map(j => verificarCombinacion(j.numeros, historico)))
-    }
-  }, [historico])
+  // Estadisticas dinamicas usando el historico completo (DB local)
+  const stats = useMemo(() => generarEstadisticasDinamicas(historico), [historico])
 
-  const generarNuevasJugadas = () => {
-    const nuevas = generarJugadasAvanzadas(historico)
-    setJugadas(nuevas)
-    setVerificaciones(nuevas.map(j => verificarCombinacion(j.numeros, historico)))
-  }
+  // 5 jugadas avanzadas usando el historico dinamico
+  const jugadas = useMemo(() => generarJugadasAvanzadas(historico), [historico])
+
+  // Verificar si alguna jugada ya salio
+  const verificaciones = useMemo(() =>
+    jugadas.map((j: JugadaAvanzada) => verificarCombinacion(j.numeros))
+  , [jugadas])
 
   const handleActualizar = async () => {
+    setMensaje('⏳ Buscando nuevo sorteo...')
     const resultado = await actualizar()
     if (resultado.nuevo) {
-      alert(`✅ Nuevo sorteo añadido: ${resultado.sorteo?.fecha}`)
+      setMensaje(`✅ Nuevo sorteo añadido: ${resultado.sorteo?.fecha}`)
     } else if (resultado.sorteo) {
-      alert('ℹ️ El sorteo ya estaba en el historial')
+      setMensaje(`ℹ️ Ya tienes el ultimo sorteo (${resultado.sorteo.fecha})`)
     } else {
-      alert('❌ No se pudo obtener el sorteo de la LAE')
+      setMensaje('❌ No se pudo conectar. Intenta mas tarde.')
     }
+    setTimeout(() => setMensaje(''), 5000)
+  }
+
+  const generarNuevasJugadas = () => {
+    // Forzar re-render cambiando de pestana y volviendo
+    const currentTab = tab
+    setTab('stats')
+    setTimeout(() => setTab(currentTab), 50)
   }
 
   const renderBalls = (nums: number[], colorClass: string) => (
@@ -54,13 +52,14 @@ function App() {
 
   if (cargando) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-yellow-400 text-xl font-bold">
-        Cargando histórico...
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400 mx-auto mb-4"></div>
+          <p>Cargando historico...</p>
+        </div>
       </div>
     )
   }
-
-  const ultimo = ultimoSorteo ?? ultimosSorteos(1, historico)[0]
 
   return (
     <div className="min-h-screen p-4 max-w-md mx-auto pb-20">
@@ -71,32 +70,34 @@ function App() {
         {totalSorteos.toLocaleString()} sorteos analizados
       </p>
 
-      {/* Botón de actualizar */}
-      <div className="flex gap-2 mb-4">
+      {/* Boton de actualizacion */}
+      <div className="flex gap-2 mb-3">
         <button
           onClick={handleActualizar}
           disabled={actualizando}
-          className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${
-            actualizando
-              ? 'bg-slate-600 text-gray-400 cursor-not-allowed'
-              : 'bg-green-600 hover:bg-green-500 text-white'
-          }`}
+          className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white font-bold py-2 px-4 rounded-lg text-sm transition"
         >
-          {actualizando ? '⏳ Actualizando...' : '🔄 Actualizar desde LAE'}
+          {actualizando ? '⏳ Buscando...' : '🔄 Buscar nuevo sorteo'}
         </button>
       </div>
 
+      {mensaje && (
+        <div className="bg-slate-700 text-white text-sm p-2 rounded-lg mb-3 text-center">
+          {mensaje}
+        </div>
+      )}
+
       {ultimaActualizacion && (
         <p className="text-center text-xs text-gray-500 mb-3">
-          Última actualización: {ultimaActualizacion}
+          Ultima actualizacion: {ultimaActualizacion}
         </p>
       )}
 
       <div className="flex gap-2 mb-4">
         {[
-          { key: 'stats' as const, label: '📊 Estadísticas' },
+          { key: 'stats' as const, label: '📊 Estadisticas' },
           { key: 'numbers' as const, label: '🎰 Jugadas' },
-          { key: 'last' as const, label: '📅 Último' },
+          { key: 'last' as const, label: '📅 Ultimo' },
         ].map(t => (
           <button
             key={t.key}
@@ -113,15 +114,15 @@ function App() {
       {tab === 'stats' && (
         <div className="space-y-4">
           <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-            <h2 className="text-lg font-bold text-red-400 mb-2">🔥 Números Calientes</h2>
+            <h2 className="text-lg font-bold text-red-400 mb-2">🔥 Numeros Calientes</h2>
             {renderBalls(stats.numerosCalientes, 'bg-red-600 text-white')}
           </div>
           <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-            <h2 className="text-lg font-bold text-blue-400 mb-2">❄️ Números Fríos</h2>
+            <h2 className="text-lg font-bold text-blue-400 mb-2">❄️ Numeros Frios</h2>
             {renderBalls(stats.numerosFrios, 'bg-blue-600 text-white')}
           </div>
           <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-            <h2 className="text-lg font-bold text-gray-300 mb-2">⏳ Más Atrasados</h2>
+            <h2 className="text-lg font-bold text-gray-300 mb-2">⏳ Mas Atrasados</h2>
             <div className="space-y-1">
               {stats.numerosMasAtrasados.slice(0, 5).map(a => (
                 <div key={a.numero} className="flex justify-between text-sm">
@@ -139,11 +140,11 @@ function App() {
             </div>
           </div>
           <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-            <h2 className="text-lg font-bold text-gray-300 mb-2">📈 Estadísticas de Suma</h2>
+            <h2 className="text-lg font-bold text-gray-300 mb-2">📈 Estadisticas de Suma</h2>
             <div className="grid grid-cols-3 gap-2 text-center">
               <div><p className="text-xl font-bold text-green-400">{stats.sumaMedia}</p><p className="text-xs text-gray-500">Media</p></div>
-              <div><p className="text-xl font-bold text-red-400">{stats.sumaMinima}</p><p className="text-xs text-gray-500">Mínima</p></div>
-              <div><p className="text-xl font-bold text-purple-400">{stats.sumaMaxima}</p><p className="text-xs text-gray-500">Máxima</p></div>
+              <div><p className="text-xl font-bold text-red-400">{stats.sumaMinima}</p><p className="text-xs text-gray-500">Minima</p></div>
+              <div><p className="text-xl font-bold text-purple-400">{stats.sumaMaxima}</p><p className="text-xs text-gray-500">Maxima</p></div>
             </div>
           </div>
         </div>
@@ -153,7 +154,7 @@ function App() {
         <div className="space-y-4">
           <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
             <h2 className="text-lg font-bold text-yellow-400 mb-1">🎰 5 Jugadas Inteligentes</h2>
-            <p className="text-xs text-gray-400 mb-3">Análisis avanzado: Markov, co-occurrencia, decenas, patrones</p>
+            <p className="text-xs text-gray-400 mb-3">Analisis avanzado: Markov, co-ocurrencia, decenas, patrones</p>
 
             {jugadas.map((jugada, idx) => (
               <div key={idx} className="mb-4 last:mb-0 bg-slate-900 rounded-lg p-3">
@@ -185,7 +186,7 @@ function App() {
 
                 {verificaciones[idx]?.yaSalio && (
                   <p className="text-xs text-red-400 mt-2">
-                    ⚠️ Esta combinación ya salió el {verificaciones[idx].sorteo?.fecha}
+                    ⚠️ Esta combinacion ya salio el {verificaciones[idx].sorteo?.fecha}
                   </p>
                 )}
               </div>
@@ -201,22 +202,78 @@ function App() {
         </div>
       )}
 
-      {tab === 'last' && (
+      {tab === 'last' && ultimoSorteo && (
         <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-          <h2 className="text-lg font-bold text-gray-300 mb-2">📅 Último Sorteo Registrado</h2>
-          <p className="text-sm text-gray-400 mb-3">Fecha: <span className="text-white font-bold">{ultimo.fecha}</span></p>
-          <p className="text-xs text-gray-500 mb-1">Números principales</p>
-          {renderBalls(ultimo.numeros, 'bg-gray-700 text-white')}
+          <h2 className="text-lg font-bold text-gray-300 mb-2">📅 Ultimo Sorteo Registrado</h2>
+          <p className="text-sm text-gray-400 mb-3">Fecha: <span className="text-white font-bold">{ultimoSorteo.fecha}</span></p>
+          <p className="text-xs text-gray-500 mb-1">Numeros principales</p>
+          {renderBalls(ultimoSorteo.numeros, 'bg-gray-700 text-white')}
           <div className="mt-4 grid grid-cols-2 gap-4">
-            <div className="bg-slate-900 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">Complementario</p><p className="text-2xl font-black text-yellow-400">{ultimo.complementario}</p></div>
-            <div className="bg-slate-900 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">Reintegro</p><p className="text-2xl font-black text-yellow-400">{ultimo.reintegro ?? 'N/D'}</p></div>
+            <div className="bg-slate-900 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">Complementario</p><p className="text-2xl font-black text-yellow-400">{ultimoSorteo.complementario}</p></div>
+            <div className="bg-slate-900 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">Reintegro</p><p className="text-2xl font-black text-yellow-400">{ultimoSorteo.reintegro ?? 'N/D'}</p></div>
           </div>
         </div>
       )}
 
-      <p className="text-center text-xs text-gray-600 mt-6 mb-4">⚠️ La lotería es un juego de azar. Uso educativo.</p>
+      <p className="text-center text-xs text-gray-600 mt-6 mb-4">⚠️ La loteria es un juego de azar. Uso educativo.</p>
     </div>
   )
+}
+
+/**
+ * Genera estadisticas usando el historico dinamico (DB local)
+ */
+function generarEstadisticasDinamicas(historico: SorteoPrimitiva[]) {
+  if (historico.length === 0) {
+    return {
+      totalSorteos: 0,
+      fechaInicio: '',
+      fechaFin: '',
+      numerosCalientes: [] as number[],
+      numerosFrios: [] as number[],
+      numerosMasAtrasados: [] as { numero: number; sorteosSinSalir: number }[],
+      paresImpares: { pares: 0, impares: 0 },
+      sumaMedia: 0,
+      sumaMinima: 0,
+      sumaMaxima: 0,
+    }
+  }
+
+  const total = historico.length
+  const freq = new Map<number, number>()
+  for (let i = 1; i <= 49; i++) freq.set(i, 0)
+  historico.forEach(s => s.numeros.forEach(n => freq.set(n, (freq.get(n) || 0) + 1)))
+
+  const frecuenciaNumeros = Array.from(freq.entries())
+    .map(([numero, frecuencia]) => ({ numero, frecuencia, porcentaje: Number(((frecuencia / (total * 6)) * 100).toFixed(2)) }))
+    .sort((a, b) => b.frecuencia - a.frecuencia)
+
+  const ultimaAparicion = new Map<number, number>()
+  for (let i = 1; i <= 49; i++) ultimaAparicion.set(i, -1)
+  historico.forEach((s, idx) => s.numeros.forEach(n => ultimaAparicion.set(n, idx)))
+
+  const atrasados = Array.from(ultimaAparicion.entries())
+    .map(([numero, ultIdx]) => ({ numero, sorteosSinSalir: ultIdx >= 0 ? total - 1 - ultIdx : total }))
+    .sort((a, b) => b.sorteosSinSalir - a.sorteosSinSalir)
+
+  let pares = 0, impares = 0
+  historico.forEach(s => s.numeros.forEach(n => { if (n % 2 === 0) pares++; else impares++ }))
+
+  const sumas = historico.map(s => s.numeros.reduce((a, b) => a + b, 0))
+  const media = sumas.reduce((a, b) => a + b, 0) / sumas.length
+
+  return {
+    totalSorteos: total,
+    fechaInicio: historico[historico.length - 1]?.fecha ?? '',
+    fechaFin: historico[0]?.fecha ?? '',
+    numerosCalientes: frecuenciaNumeros.slice(0, 10).map(f => f.numero),
+    numerosFrios: frecuenciaNumeros.slice(-10).map(f => f.numero),
+    numerosMasAtrasados: atrasados.slice(0, 10),
+    paresImpares: { pares, impares },
+    sumaMedia: Number(media.toFixed(2)),
+    sumaMinima: Math.min(...sumas),
+    sumaMaxima: Math.max(...sumas),
+  }
 }
 
 export default App
