@@ -23,7 +23,7 @@ export async function syncPrimitivaResults(): Promise<SyncResult> {
     const timeoutId = setTimeout(() => {
       console.log('[SYNC] Timeout! Abortando fetch...');
       controller.abort();
-    }, 30000); // 30s porque Render gratuito tarda en despertar
+    }, 30000);
 
     const response = await fetch(PROXY_URL, { signal: controller.signal });
     clearTimeout(timeoutId);
@@ -65,7 +65,6 @@ export async function syncPrimitivaResults(): Promise<SyncResult> {
     errors.push(msg);
   }
 
-  // Fallback: usar el más reciente de la DB local
   if (!latestDraw) {
     const all = await getAllResults();
     if (all.length > 0) latestDraw = all[0];
