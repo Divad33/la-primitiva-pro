@@ -23,6 +23,10 @@ export function useHistorico() {
     setCargando(false);
   };
 
+  const recargar = async () => {
+    await cargarDatos();
+  };
+
   const actualizar = async () => {
     setActualizando(true);
     try {
@@ -39,17 +43,15 @@ export function useHistorico() {
       return { nuevo: false, sorteo: null, error: 'Error inesperado en la app' };
     }
   };
-  const recargar = async () => {
-    await cargarDatos();
-  };
 
-    return {
+  return {
     historico,
     cargando,
     actualizando,
     ultimaActualizacion,
     actualizar,
-    recargar,  // <-- añade esto
+    recargar,
     totalSorteos: historico.length,
     ultimoSorteo: historico.length > 0 ? historico[0] : null,
   };
+}
