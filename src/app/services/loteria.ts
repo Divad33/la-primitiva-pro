@@ -6,7 +6,7 @@ import { getAllResults } from './resultsDb';
 
 const STORAGE_KEY = 'sorteos_nuevos';
 
-// Fallback: usar Capacitor Preferences para móvil
+// Fallback: usar Capacitor Preferences para móvil (sorteos nuevos solo)
 export async function obtenerSorteosLocales(): Promise<SorteoPrimitiva[]> {
   const { value } = await Preferences.get({ key: STORAGE_KEY });
   if (!value) return [];
@@ -32,24 +32,39 @@ export async function guardarSorteo(sorteo: SorteoPrimitiva): Promise<void> {
 }
 
 /**
- * OBTENER HISTÓRICO COMPLETO: DB local + empaquetado
+ * OBTENER HISTÓRICO COMPLETO: empaquetado + DB local (merge sin duplicados)
  */
 export function obtenerHistoricoCompleto(): SorteoPrimitiva[] {
-  // Usar la nueva DB local (localStorage) que ya incluye el empaquetado + online
   const dbResults = getAllResults();
   
-  if (dbResults.length > 0) {
-    return dbResults.map(r => ({
-      fecha: r.fecha,
-      numeros: r.numeros as [number, number, number, number, number, number],
-      complementario: r.complementario,
-      reintegro: r.reintegro,
-      joker: r.joker,
-    }));
+  // Mapear resultados de la DB local (solo sorteos nuevos del proxy)
+  const locales = dbResults.map(r => ({
+    fecha: r.fecha,
+    numeros: r.numeros as [number, number, number, number, number, number],
+    complementario: r.complementario,
+    reintegro: r.reintegro,
+    joker: r.joker,
+  }));
+
+  // Merge con histórico empaquetado y eliminar duplicados por fecha
+  const mapa = new Map<string, SorteoPrimitiva>();
+  
+  // Primero los empaquetados (base histórica)
+  for (const s of HISTORICO_PRIMITIVA) {
+    mapa.set(s.fecha, s);
+  }
+  
+  // Luego los locales del proxy (sobrescriben si hay colisión)
+  for (const s of locales) {
+    mapa.set(s.fecha, s);
   }
 
-  // Fallback: solo el empaquetado
-  return [...HISTORICO_PRIMITIVA];
+  // Ordenar por fecha descendente (más reciente primero)
+  return Array.from(mapa.values()).sort((a, b) => {
+    const [da, ma, ya] = a.fecha.split('/').map(Number);
+    const [db, mb, yb] = b.fecha.split('/').map(Number);
+    return new Date(yb, mb - 1, db).getTime() - new Date(ya, ma - 1, da).getTime();
+  });
 }
 
 /**
