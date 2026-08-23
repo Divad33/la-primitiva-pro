@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { SorteoPrimitiva } from '../../types';
 import { obtenerHistoricoCompleto, actualizarDesdeProxy } from '../services/loteria';
 
@@ -8,27 +8,36 @@ export function useHistorico() {
   const [actualizando, setActualizando] = useState(false);
   const [ultimaActualizacion, setUltimaActualizacion] = useState<string>('');
 
-  // Cargar datos al inicio (sincroniza empaquetado + local)
   useEffect(() => {
     cargarDatos();
   }, []);
 
-  const cargarDatos = () => {
+  const cargarDatos = async () => {
     setCargando(true);
-    const datos = obtenerHistoricoCompleto();
-    setHistorico(datos);
+    try {
+      const datos = await obtenerHistoricoCompleto();
+      setHistorico(datos);
+    } catch (e) {
+      console.error('[useHistorico] Error cargando:', e);
+    }
     setCargando(false);
   };
 
   const actualizar = async () => {
     setActualizando(true);
-    const resultado = await actualizarDesdeProxy();
-    if (resultado.nuevo) {
-      cargarDatos(); // Recargar desde DB local
-      setUltimaActualizacion(new Date().toLocaleString('es-ES'));
+    try {
+      const resultado = await actualizarDesdeProxy();
+      if (resultado.nuevo) {
+        await cargarDatos();
+        setUltimaActualizacion(new Date().toLocaleString('es-ES'));
+      }
+      setActualizando(false);
+      return resultado;
+    } catch (e) {
+      console.error('[useHistorico] Error actualizando:', e);
+      setActualizando(false);
+      return { nuevo: false, sorteo: null, error: 'Error inesperado en la app' };
     }
-    setActualizando(false);
-    return resultado;
   };
 
   return {
@@ -38,6 +47,6 @@ export function useHistorico() {
     ultimaActualizacion,
     actualizar,
     totalSorteos: historico.length,
-    ultimoSorteo: historico.length > 0 ? historico[0] : null, // [0] = más reciente
+    ultimoSorteo: historico.length > 0 ? historico[0] : null,
   };
 }
