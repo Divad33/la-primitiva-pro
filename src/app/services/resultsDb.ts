@@ -30,7 +30,13 @@ function readAll(): PrimitivaResult[] {
 }
 
 function persist(results: PrimitivaResult[]): void {
-  localStorage.setItem(RESULTS_KEY, JSON.stringify(results));
+  try {
+    localStorage.setItem(RESULTS_KEY, JSON.stringify(results));
+  } catch (e) {
+    // Si localStorage está lleno (muy raro con solo sorteos nuevos),
+    // no bloquear la app. En producción se puede migrar a IndexedDB.
+    console.warn('No se pudo persistir en localStorage:', e);
+  }
 }
 
 function resultKey(result: Pick<PrimitivaResult, 'fecha'>): string {
@@ -39,7 +45,6 @@ function resultKey(result: Pick<PrimitivaResult, 'fecha'>): string {
 
 export function getAllResults(): PrimitivaResult[] {
   return readAll().sort((a, b) => {
-    // Ordenar por fecha descendente (más reciente primero)
     const [da, ma, ya] = a.fecha.split('/').map(Number);
     const [db, mb, yb] = b.fecha.split('/').map(Number);
     return new Date(yb, mb - 1, db).getTime() - new Date(ya, ma - 1, da).getTime();
