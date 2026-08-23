@@ -13,7 +13,6 @@ function App() {
   const [jugadas, setJugadas] = useState<JugadaAvanzada[]>([])
   const [verificaciones, setVerificaciones] = useState<Array<{ yaSalio: boolean; sorteo?: SorteoPrimitiva }>>([])
 
-  // Recalcular estadísticas cuando cambia el histórico (fuera del render, no bloquea la UI)
   useEffect(() => {
     if (historico.length > 0) {
       setStats(generarEstadisticasDinamicas(historico))
@@ -25,8 +24,6 @@ function App() {
 
   const handleActualizar = async () => {
     setMensaje('⏳ Buscando nuevo sorteo...')
-    const handleActualizar = async () => {
-    setMensaje('⏳ Buscando nuevo sorteo...')
     const resultado = await actualizar()
     if (resultado.nuevo) {
       setMensaje(`✅ Nuevo sorteo añadido: ${resultado.sorteo?.fecha}`)
@@ -37,7 +34,6 @@ function App() {
     }
     setTimeout(() => setMensaje(''), 8000)
   }
-
 
   const generarNuevasJugadas = () => {
     if (historico.length > 0) {
