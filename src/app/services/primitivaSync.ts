@@ -1,10 +1,8 @@
 import { addResults, getAllResults, type PrimitivaResult } from './resultsDb';
 
-// URL de tu proxy desplegado en Render
 const PROXY_URL = 'https://la-primitiva-proxy.onrender.com/primitiva/latest';
 
 export interface SyncResult {
-  addedBundled: number;
   addedLatest: number;
   total: number;
   latestOnline: boolean;
@@ -12,22 +10,31 @@ export interface SyncResult {
   error?: string;
 }
 
-/**
- * Sincroniza resultados del proxy online.
- * NO carga el histórico empaquetado a la DB local (ya está importado directamente).
- */
 export async function syncPrimitivaResults(): Promise<SyncResult> {
   let addedLatest = 0;
   let latestOnline = false;
   let latestDraw: PrimitivaResult | undefined;
   const errors: string[] = [];
 
-  // Obtener últimos sorteos del proxy online
   try {
-    const response = await fetch(PROXY_URL);
-    if (!response.ok) throw new Error('Proxy no disponible');
-    
+    console.log('[SYNC] Fetching proxy:', PROXY_URL);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      console.log('[SYNC] Timeout! Abortando fetch...');
+      controller.abort();
+    }, 30000); // 30s porque Render gratuito tarda en despertar
+
+    const response = await fetch(PROXY_URL, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    console.log('[SYNC] Proxy status:', response.status);
+
+    if (!response.ok) throw new Error(`Proxy HTTP ${response.status}`);
+
     const data = await response.json();
+    console.log('[SYNC] Proxy data:', JSON.stringify(data).slice(0, 400));
+
     const results = data.results as Array<{
       fecha: string;
       numeros: number[];
@@ -36,7 +43,7 @@ export async function syncPrimitivaResults(): Promise<SyncResult> {
       joker: number | null;
     }>;
 
-    if (results.length > 0) {
+    if (results && results.length > 0) {
       const mapped = results.map(r => ({
         fecha: r.fecha,
         numeros: r.numeros,
@@ -44,24 +51,30 @@ export async function syncPrimitivaResults(): Promise<SyncResult> {
         reintegro: r.reintegro,
         joker: r.joker,
       }));
-      addedLatest = addResults(mapped).length;
+      addedLatest = (await addResults(mapped)).length;
       latestOnline = true;
-      latestDraw = getAllResults()[0];
+      const all = await getAllResults();
+      latestDraw = all[0];
+      console.log('[SYNC] Added:', addedLatest, 'Total:', all.length);
+    } else {
+      console.log('[SYNC] Proxy respondió pero sin resultados');
     }
   } catch (e) {
-    errors.push(e instanceof Error ? e.message : 'Error online');
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[SYNC] Error:', msg);
+    errors.push(msg);
   }
 
-  // Si no hay online, usar el más reciente de la DB local
+  // Fallback: usar el más reciente de la DB local
   if (!latestDraw) {
-    const all = getAllResults();
+    const all = await getAllResults();
     if (all.length > 0) latestDraw = all[0];
   }
 
+  const total = (await getAllResults()).length;
   return {
-    addedBundled: 0,
     addedLatest,
-    total: getAllResults().length,
+    total,
     latestOnline,
     latestDraw,
     error: errors.length ? errors.join(' | ') : undefined,
