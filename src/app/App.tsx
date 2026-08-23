@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useHistorico } from './hooks/useHistorico'
 import { generarJugadasAvanzadas, JugadaAvanzada } from './services/analisis-avanzado'
 import { verificarCombinacion } from './services/generador'
@@ -9,11 +9,19 @@ function App() {
   const [tab, setTab] = useState<'stats' | 'numbers' | 'last'>('stats')
   const [mensaje, setMensaje] = useState('')
 
-  const stats = useMemo(() => generarEstadisticasDinamicas(historico), [historico])
-  const jugadas = useMemo(() => generarJugadasAvanzadas(historico), [historico])
-  const verificaciones = useMemo(() =>
-    jugadas.map((j: JugadaAvanzada) => verificarCombinacion(j.numeros))
-  , [jugadas])
+  const [stats, setStats] = useState(() => generarEstadisticasDinamicas([]))
+  const [jugadas, setJugadas] = useState<JugadaAvanzada[]>([])
+  const [verificaciones, setVerificaciones] = useState<Array<{ yaSalio: boolean; sorteo?: SorteoPrimitiva }>>([])
+
+  // Recalcular estadísticas cuando cambia el histórico (fuera del render, no bloquea la UI)
+  useEffect(() => {
+    if (historico.length > 0) {
+      setStats(generarEstadisticasDinamicas(historico))
+      const nuevasJugadas = generarJugadasAvanzadas(historico)
+      setJugadas(nuevasJugadas)
+      setVerificaciones(nuevasJugadas.map(j => verificarCombinacion(j.numeros, historico)))
+    }
+  }, [historico])
 
   const handleActualizar = async () => {
     setMensaje('⏳ Buscando nuevo sorteo...')
@@ -29,9 +37,11 @@ function App() {
   }
 
   const generarNuevasJugadas = () => {
-    const currentTab = tab
-    setTab('stats')
-    setTimeout(() => setTab(currentTab), 50)
+    if (historico.length > 0) {
+      const nuevas = generarJugadasAvanzadas(historico)
+      setJugadas(nuevas)
+      setVerificaciones(nuevas.map(j => verificarCombinacion(j.numeros, historico)))
+    }
   }
 
   const renderBalls = (nums: number[], colorClass: string) => (
