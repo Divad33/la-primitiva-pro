@@ -1,3 +1,5 @@
+import { Preferences } from '@capacitor/preferences';
+
 const RESULTS_KEY = 'la_primitiva_results';
 
 export interface PrimitivaResult {
@@ -18,24 +20,26 @@ function isResult(r: unknown): r is PrimitivaResult {
   );
 }
 
-function readAll(): PrimitivaResult[] {
+async function readAll(): Promise<PrimitivaResult[]> {
   try {
-    const raw = localStorage.getItem(RESULTS_KEY);
-    if (!raw) return [];
-    const parsed: unknown[] = JSON.parse(raw);
+    const { value } = await Preferences.get({ key: RESULTS_KEY });
+    if (!value) return [];
+    const parsed: unknown[] = JSON.parse(value);
     return Array.isArray(parsed) ? parsed.filter(isResult) : [];
-  } catch {
+  } catch (e) {
+    console.error('[resultsDb] Error leyendo:', e);
     return [];
   }
 }
 
-function persist(results: PrimitivaResult[]): void {
+async function persist(results: PrimitivaResult[]): Promise<void> {
   try {
-    localStorage.setItem(RESULTS_KEY, JSON.stringify(results));
+    await Preferences.set({
+      key: RESULTS_KEY,
+      value: JSON.stringify(results),
+    });
   } catch (e) {
-    // Si localStorage está lleno (muy raro con solo sorteos nuevos),
-    // no bloquear la app. En producción se puede migrar a IndexedDB.
-    console.warn('No se pudo persistir en localStorage:', e);
+    console.warn('[resultsDb] No se pudo persistir:', e);
   }
 }
 
@@ -43,27 +47,28 @@ function resultKey(result: Pick<PrimitivaResult, 'fecha'>): string {
   return result.fecha;
 }
 
-export function getAllResults(): PrimitivaResult[] {
-  return readAll().sort((a, b) => {
+export async function getAllResults(): Promise<PrimitivaResult[]> {
+  const all = await readAll();
+  return all.sort((a, b) => {
     const [da, ma, ya] = a.fecha.split('/').map(Number);
     const [db, mb, yb] = b.fecha.split('/').map(Number);
     return new Date(yb, mb - 1, db).getTime() - new Date(ya, ma - 1, da).getTime();
   });
 }
 
-export function addResult(entry: Omit<PrimitivaResult, 'id'>): PrimitivaResult {
-  const all = readAll();
+export async function addResult(entry: Omit<PrimitivaResult, 'id'>): Promise<PrimitivaResult> {
+  const all = await readAll();
   const item: PrimitivaResult = {
     ...entry,
     id: `primitiva-${entry.fecha.replace(/\//g, '-')}`,
   };
   all.push(item);
-  persist(all);
+  await persist(all);
   return item;
 }
 
-export function addResults(entries: Omit<PrimitivaResult, 'id'>[]): PrimitivaResult[] {
-  const all = readAll();
+export async function addResults(entries: Omit<PrimitivaResult, 'id'>[]): Promise<PrimitivaResult[]> {
+  const all = await readAll();
   const existingKeys = new Set(all.map(resultKey));
   const added: PrimitivaResult[] = [];
 
@@ -78,14 +83,15 @@ export function addResults(entries: Omit<PrimitivaResult, 'id'>[]): PrimitivaRes
   }
 
   all.push(...added);
-  persist(all);
+  await persist(all);
   return added;
 }
 
-export function clearAllResults(): void {
-  localStorage.removeItem(RESULTS_KEY);
+export async function clearAllResults(): Promise<void> {
+  await Preferences.remove({ key: RESULTS_KEY });
 }
 
-export function exportResults(): string {
-  return JSON.stringify(getAllResults(), null, 2);
+export async function exportResults(): Promise<string> {
+  const results = await getAllResults();
+  return JSON.stringify(results, null, 2);
 }
