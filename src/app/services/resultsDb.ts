@@ -87,13 +87,6 @@ export async function addResults(entries: Omit<PrimitivaResult, 'id'>[]): Promis
   return added;
 }
 
-export async function clearAllResults(): Promise<void> {
-  await Preferences.remove({ key: RESULTS_KEY });
-}
-
-export async function exportResults(): Promise<string> {
-  const results = await getAllResults();
-  return JSON.stringify(results, null, 2);
 export async function addManualResult(params: {
   fecha: string;
   numeros: number[];
@@ -110,4 +103,11 @@ export async function addManualResult(params: {
   });
 }
 
+export async function clearAllResults(): Promise<void> {
+  await Preferences.remove({ key: RESULTS_KEY });
+}
+
+export async function exportResults(): Promise<string> {
+  const results = await getAllResults();
+  return JSON.stringify(results, null, 2);
 }
