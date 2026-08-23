@@ -25,16 +25,19 @@ function App() {
 
   const handleActualizar = async () => {
     setMensaje('⏳ Buscando nuevo sorteo...')
+    const handleActualizar = async () => {
+    setMensaje('⏳ Buscando nuevo sorteo...')
     const resultado = await actualizar()
     if (resultado.nuevo) {
       setMensaje(`✅ Nuevo sorteo añadido: ${resultado.sorteo?.fecha}`)
     } else if (resultado.sorteo) {
       setMensaje(`ℹ️ Ya tienes el ultimo sorteo (${resultado.sorteo.fecha})`)
     } else {
-      setMensaje('❌ No se pudo conectar. Intenta mas tarde.')
+      setMensaje(`❌ ${resultado.error || 'No se pudo conectar. Intenta mas tarde.'}`)
     }
-    setTimeout(() => setMensaje(''), 5000)
+    setTimeout(() => setMensaje(''), 8000)
   }
+
 
   const generarNuevasJugadas = () => {
     if (historico.length > 0) {
