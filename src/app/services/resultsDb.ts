@@ -94,4 +94,20 @@ export async function clearAllResults(): Promise<void> {
 export async function exportResults(): Promise<string> {
   const results = await getAllResults();
   return JSON.stringify(results, null, 2);
+export async function addManualResult(params: {
+  fecha: string;
+  numeros: number[];
+  complementario: number;
+  reintegro: number | null;
+  joker?: number | null;
+}): Promise<PrimitivaResult> {
+  return addResult({
+    fecha: params.fecha,
+    numeros: params.numeros,
+    complementario: params.complementario,
+    reintegro: params.reintegro,
+    joker: params.joker ?? null,
+  });
+}
+
 }
