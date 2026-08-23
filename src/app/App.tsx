@@ -6,7 +6,7 @@ import { addManualResult } from './services/resultsDb'
 import type { SorteoPrimitiva } from '../types/index'
 
 function App() {
-  const { historico, cargando, actualizando, ultimaActualizacion, actualizar, totalSorteos, ultimoSorteo, recargar } = useHistorico()
+  const { historico, cargando, actualizando, ultimaActualizacion, actualizar, recargar, totalSorteos, ultimoSorteo } = useHistorico()
   const [tab, setTab] = useState<'stats' | 'numbers' | 'last'>('stats')
   const [mensaje, setMensaje] = useState('')
 
@@ -61,6 +61,10 @@ function App() {
       })
 
       setShowManual(false)
+      setManualFecha('')
+      setManualNums('')
+      setManualComp('')
+      setManualReint('')
       setMensaje('✅ Sorteo guardado manualmente')
       await recargar()
       setTimeout(() => setMensaje(''), 5000)
