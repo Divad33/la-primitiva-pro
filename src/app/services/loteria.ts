@@ -6,7 +6,6 @@ import { getAllResults } from './resultsDb';
 
 const STORAGE_KEY = 'sorteos_nuevos';
 
-// Fallback: usar Capacitor Preferences para móvil (sorteos nuevos solo)
 export async function obtenerSorteosLocales(): Promise<SorteoPrimitiva[]> {
   const { value } = await Preferences.get({ key: STORAGE_KEY });
   if (!value) return [];
@@ -34,10 +33,9 @@ export async function guardarSorteo(sorteo: SorteoPrimitiva): Promise<void> {
 /**
  * OBTENER HISTÓRICO COMPLETO: empaquetado + DB local (merge sin duplicados)
  */
-export function obtenerHistoricoCompleto(): SorteoPrimitiva[] {
-  const dbResults = getAllResults();
-  
-  // Mapear resultados de la DB local (solo sorteos nuevos del proxy)
+export async function obtenerHistoricoCompleto(): Promise<SorteoPrimitiva[]> {
+  const dbResults = await getAllResults();
+
   const locales = dbResults.map(r => ({
     fecha: r.fecha,
     numeros: r.numeros as [number, number, number, number, number, number],
@@ -46,15 +44,14 @@ export function obtenerHistoricoCompleto(): SorteoPrimitiva[] {
     joker: r.joker,
   }));
 
-  // Merge con histórico empaquetado y eliminar duplicados por fecha
   const mapa = new Map<string, SorteoPrimitiva>();
-  
-  // Primero los empaquetados (base histórica)
+
+  // Base: histórico empaquetado (4.175 sorteos)
   for (const s of HISTORICO_PRIMITIVA) {
     mapa.set(s.fecha, s);
   }
-  
-  // Luego los locales del proxy (sobrescriben si hay colisión)
+
+  // Sobrescribir/agregar los nuevos del proxy
   for (const s of locales) {
     mapa.set(s.fecha, s);
   }
@@ -76,7 +73,7 @@ export async function actualizarDesdeProxy(): Promise<{
   error?: string;
 }> {
   const sync = await syncPrimitivaResults();
-  
+
   if (sync.addedLatest > 0 && sync.latestDraw) {
     return {
       nuevo: true,
