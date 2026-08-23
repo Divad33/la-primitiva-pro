@@ -2,16 +2,24 @@ import { useState, useEffect } from 'react'
 import { useHistorico } from './hooks/useHistorico'
 import { generarJugadasAvanzadas, JugadaAvanzada } from './services/analisis-avanzado'
 import { verificarCombinacion } from './services/generador'
+import { addManualResult } from './services/resultsDb'
 import type { SorteoPrimitiva } from '../types/index'
 
 function App() {
-  const { historico, cargando, actualizando, ultimaActualizacion, actualizar, totalSorteos, ultimoSorteo } = useHistorico()
+  const { historico, cargando, actualizando, ultimaActualizacion, actualizar, totalSorteos, ultimoSorteo, recargar } = useHistorico()
   const [tab, setTab] = useState<'stats' | 'numbers' | 'last'>('stats')
   const [mensaje, setMensaje] = useState('')
 
   const [stats, setStats] = useState(() => generarEstadisticasDinamicas([]))
   const [jugadas, setJugadas] = useState<JugadaAvanzada[]>([])
   const [verificaciones, setVerificaciones] = useState<Array<{ yaSalio: boolean; sorteo?: SorteoPrimitiva }>>([])
+
+  // Modal entrada manual
+  const [showManual, setShowManual] = useState(false)
+  const [manualFecha, setManualFecha] = useState('')
+  const [manualNums, setManualNums] = useState('')
+  const [manualComp, setManualComp] = useState('')
+  const [manualReint, setManualReint] = useState('')
 
   useEffect(() => {
     if (historico.length > 0) {
@@ -30,9 +38,35 @@ function App() {
     } else if (resultado.sorteo) {
       setMensaje(`ℹ️ Ya tienes el ultimo sorteo (${resultado.sorteo.fecha})`)
     } else {
-      setMensaje(`❌ ${resultado.error || 'No se pudo conectar. Intenta mas tarde.'}`)
+      setMensaje(`❌ ${resultado.error || 'No se pudo conectar. Intenta mas tarde o añade manualmente.'}`)
     }
     setTimeout(() => setMensaje(''), 8000)
+  }
+
+  const handleGuardarManual = async () => {
+    try {
+      const nums = manualNums.split(/[,\s]+/).map(n => parseInt(n.trim())).filter(n => !isNaN(n) && n >= 1 && n <= 49)
+      if (nums.length !== 6) {
+        setMensaje('❌ Debes introducir exactamente 6 numeros (1-49)')
+        return
+      }
+      const comp = parseInt(manualComp)
+      const reint = manualReint ? parseInt(manualReint) : null
+
+      await addManualResult({
+        fecha: manualFecha || new Date().toLocaleDateString('es-ES'),
+        numeros: nums,
+        complementario: comp,
+        reintegro: reint,
+      })
+
+      setShowManual(false)
+      setMensaje('✅ Sorteo guardado manualmente')
+      await recargar()
+      setTimeout(() => setMensaje(''), 5000)
+    } catch (e) {
+      setMensaje('❌ Error guardando sorteo manual')
+    }
   }
 
   const generarNuevasJugadas = () => {
@@ -65,7 +99,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen p-4 max-w-md mx-auto pb-20">
+    <div className="min-h-screen p-4 max-w-md mx-auto pb-20 relative">
       <h1 className="text-3xl font-black text-center text-yellow-400 mb-2 drop-shadow-md">
         🎰 La Primitiva Pro
       </h1>
@@ -80,6 +114,12 @@ function App() {
           className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white font-bold py-2 px-4 rounded-lg text-sm transition"
         >
           {actualizando ? '⏳ Buscando...' : '🔄 Buscar nuevo sorteo'}
+        </button>
+        <button
+          onClick={() => setShowManual(true)}
+          className="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-3 rounded-lg text-sm transition"
+        >
+          ➕
         </button>
       </div>
 
@@ -213,6 +253,66 @@ function App() {
           <div className="mt-4 grid grid-cols-2 gap-4">
             <div className="bg-slate-900 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">Complementario</p><p className="text-2xl font-black text-yellow-400">{ultimoSorteo.complementario}</p></div>
             <div className="bg-slate-900 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">Reintegro</p><p className="text-2xl font-black text-yellow-400">{ultimoSorteo.reintegro ?? 'N/D'}</p></div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ENTRADA MANUAL */}
+      {showManual && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-xl p-5 w-full max-w-sm border border-slate-600">
+            <h2 className="text-lg font-bold text-yellow-400 mb-4">➕ Añadir Sorteo Manual</h2>
+            
+            <label className="block text-xs text-gray-400 mb-1">Fecha (DD/MM/AAAA)</label>
+            <input
+              type="text"
+              value={manualFecha}
+              onChange={e => setManualFecha(e.target.value)}
+              placeholder="23/08/2026"
+              className="w-full bg-slate-900 text-white rounded-lg p-2 mb-3 text-sm border border-slate-600"
+            />
+
+            <label className="block text-xs text-gray-400 mb-1">6 Numeros (separados por coma o espacio)</label>
+            <input
+              type="text"
+              value={manualNums}
+              onChange={e => setManualNums(e.target.value)}
+              placeholder="5, 12, 23, 34, 41, 47"
+              className="w-full bg-slate-900 text-white rounded-lg p-2 mb-3 text-sm border border-slate-600"
+            />
+
+            <label className="block text-xs text-gray-400 mb-1">Complementario</label>
+            <input
+              type="number"
+              value={manualComp}
+              onChange={e => setManualComp(e.target.value)}
+              placeholder="15"
+              className="w-full bg-slate-900 text-white rounded-lg p-2 mb-3 text-sm border border-slate-600"
+            />
+
+            <label className="block text-xs text-gray-400 mb-1">Reintegro (0-9, opcional)</label>
+            <input
+              type="number"
+              value={manualReint}
+              onChange={e => setManualReint(e.target.value)}
+              placeholder="7"
+              className="w-full bg-slate-900 text-white rounded-lg p-2 mb-4 text-sm border border-slate-600"
+            />
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleGuardarManual}
+                className="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg text-sm transition"
+              >
+                💾 Guardar
+              </button>
+              <button
+                onClick={() => setShowManual(false)}
+                className="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 rounded-lg text-sm transition"
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}
