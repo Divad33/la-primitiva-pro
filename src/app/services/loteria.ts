@@ -30,13 +30,10 @@ export async function guardarSorteo(sorteo: SorteoPrimitiva): Promise<void> {
   });
 }
 
-/**
- * OBTENER HISTÓRICO COMPLETO: empaquetado + DB local (merge sin duplicados)
- */
 export async function obtenerHistoricoCompleto(): Promise<SorteoPrimitiva[]> {
   const dbResults = await getAllResults();
 
-  const locales = dbResults.map(r => ({
+  const locales = dbResults.map((r: { fecha: string; numeros: number[]; complementario: number; reintegro: number | null; joker: number | null }) => ({
     fecha: r.fecha,
     numeros: r.numeros as [number, number, number, number, number, number],
     complementario: r.complementario,
@@ -46,17 +43,14 @@ export async function obtenerHistoricoCompleto(): Promise<SorteoPrimitiva[]> {
 
   const mapa = new Map<string, SorteoPrimitiva>();
 
-  // Base: histórico empaquetado (4.175 sorteos)
   for (const s of HISTORICO_PRIMITIVA) {
     mapa.set(s.fecha, s);
   }
 
-  // Sobrescribir/agregar los nuevos del proxy
   for (const s of locales) {
     mapa.set(s.fecha, s);
   }
 
-  // Ordenar por fecha descendente (más reciente primero)
   return Array.from(mapa.values()).sort((a, b) => {
     const [da, ma, ya] = a.fecha.split('/').map(Number);
     const [db, mb, yb] = b.fecha.split('/').map(Number);
@@ -64,9 +58,6 @@ export async function obtenerHistoricoCompleto(): Promise<SorteoPrimitiva[]> {
   });
 }
 
-/**
- * ACTUALIZAR: Sincroniza con el proxy online
- */
 export async function actualizarDesdeProxy(): Promise<{
   nuevo: boolean;
   sorteo: SorteoPrimitiva | null;
