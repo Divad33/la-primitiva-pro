@@ -1,7 +1,6 @@
 import { addResults, getAllResults, type PrimitivaResult } from './resultsDb';
-import { HISTORICO_PRIMITIVA } from '../../data/primitiva-historico';
 
-// URL de tu proxy desplegado en Render (cambiar después del deploy)
+// URL de tu proxy desplegado en Render
 const PROXY_URL = 'https://la-primitiva-proxy.onrender.com/primitiva/latest';
 
 export interface SyncResult {
@@ -14,34 +13,16 @@ export interface SyncResult {
 }
 
 /**
- * Sincroniza resultados:
- * 1. Carga historial empaquetado si la DB está vacía
- * 2. Obtiene últimos sorteos del proxy online
+ * Sincroniza resultados del proxy online.
+ * NO carga el histórico empaquetado a la DB local (ya está importado directamente).
  */
-export async function syncPrimitivaResults(loadBundledIfEmpty = true): Promise<SyncResult> {
-  let addedBundled = 0;
+export async function syncPrimitivaResults(): Promise<SyncResult> {
   let addedLatest = 0;
   let latestOnline = false;
   let latestDraw: PrimitivaResult | undefined;
   const errors: string[] = [];
 
-  // 1. Cargar historial empaquetado (4,175 sorteos) si la DB está vacía
-  if (loadBundledIfEmpty && getAllResults().length === 0) {
-    try {
-      const bundled = HISTORICO_PRIMITIVA.map(s => ({
-        fecha: s.fecha,
-        numeros: [...s.numeros],
-        complementario: s.complementario,
-        reintegro: s.reintegro,
-        joker: s.joker,
-      }));
-      addedBundled = addResults(bundled).length;
-    } catch (e) {
-      errors.push(e instanceof Error ? e.message : 'Error cargando historial');
-    }
-  }
-
-  // 2. Obtener últimos sorteos del proxy online
+  // Obtener últimos sorteos del proxy online
   try {
     const response = await fetch(PROXY_URL);
     if (!response.ok) throw new Error('Proxy no disponible');
@@ -71,14 +52,14 @@ export async function syncPrimitivaResults(loadBundledIfEmpty = true): Promise<S
     errors.push(e instanceof Error ? e.message : 'Error online');
   }
 
-  // Si no hay online, usar el más reciente de la DB
+  // Si no hay online, usar el más reciente de la DB local
   if (!latestDraw) {
     const all = getAllResults();
     if (all.length > 0) latestDraw = all[0];
   }
 
   return {
-    addedBundled,
+    addedBundled: 0,
     addedLatest,
     total: getAllResults().length,
     latestOnline,
