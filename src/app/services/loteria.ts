@@ -30,6 +30,14 @@ export async function guardarSorteo(sorteo: SorteoPrimitiva): Promise<void> {
   });
 }
 
+/**
+ * Orden estándar del histórico en toda la app: ASCENDENTE (más antiguo -> más reciente).
+ * Es el mismo orden que ya usa HISTORICO_PRIMITIVA y que asumen utils/estadisticas.ts,
+ * utils/prediccion.ts y app/services/analisis-avanzado.ts (p. ej. "el último sorteo" se
+ * calcula como historico[historico.length - 1]). Si esta función se cambia a orden
+ * descendente, hay que actualizar también esos consumidores o los cálculos de
+ * "números atrasados" y "transiciones Markov" quedarán invertidos.
+ */
 export async function obtenerHistoricoCompleto(): Promise<SorteoPrimitiva[]> {
   const dbResults = await getAllResults();
 
@@ -54,7 +62,7 @@ export async function obtenerHistoricoCompleto(): Promise<SorteoPrimitiva[]> {
   return Array.from(mapa.values()).sort((a, b) => {
     const [da, ma, ya] = a.fecha.split('/').map(Number);
     const [db, mb, yb] = b.fecha.split('/').map(Number);
-    return new Date(yb, mb - 1, db).getTime() - new Date(ya, ma - 1, da).getTime();
+    return new Date(ya, ma - 1, da).getTime() - new Date(yb, mb - 1, db).getTime();
   });
 }
 

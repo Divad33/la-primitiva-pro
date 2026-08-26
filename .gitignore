@@ -1,11 +1,14 @@
 # Dependencias
 node_modules/
-package-lock.json
+# package-lock.json SI se versiona (a proposito): garantiza builds reproducibles
+# en CI y en el build de la APK. No lo añadas aqui de nuevo.
 
 # Compilado
+# (tsconfig.json usa noEmit: true, asi que tsc no genera .js aqui; el build
+# real de la web app sale en dist/. No se ignora *.js globalmente porque el
+# proyecto SI tiene .js legitimos que deben versionarse: tailwind.config.js,
+# postcss.config.js, etc.)
 dist/
-*.js
-*.d.ts
 *.js.map
 
 # Logs

@@ -3,6 +3,7 @@ import { useHistorico } from './hooks/useHistorico'
 import { generarJugadasAvanzadas, JugadaAvanzada } from './services/analisis-avanzado'
 import { verificarCombinacion } from './services/generador'
 import { addManualResult } from './services/resultsDb'
+import { generarEstadisticasCompletas } from '../utils/estadisticas'
 import type { SorteoPrimitiva } from '../types/index'
 
 function App() {
@@ -10,7 +11,7 @@ function App() {
   const [tab, setTab] = useState<'stats' | 'numbers' | 'last'>('stats')
   const [mensaje, setMensaje] = useState('')
 
-  const [stats, setStats] = useState(() => generarEstadisticasDinamicas([]))
+  const [stats, setStats] = useState(() => generarEstadisticasCompletas([]))
   const [jugadas, setJugadas] = useState<JugadaAvanzada[]>([])
   const [verificaciones, setVerificaciones] = useState<Array<{ yaSalio: boolean; sorteo?: SorteoPrimitiva }>>([])
 
@@ -23,7 +24,7 @@ function App() {
 
   useEffect(() => {
     if (historico.length > 0) {
-      setStats(generarEstadisticasDinamicas(historico))
+      setStats(generarEstadisticasCompletas(historico))
       const nuevasJugadas = generarJugadasAvanzadas(historico)
       setJugadas(nuevasJugadas)
       setVerificaciones(nuevasJugadas.map(j => verificarCombinacion(j.numeros, historico)))
@@ -324,59 +325,6 @@ function App() {
       <p className="text-center text-xs text-gray-600 mt-6 mb-4">⚠️ La loteria es un juego de azar. Uso educativo.</p>
     </div>
   )
-}
-
-function generarEstadisticasDinamicas(historico: SorteoPrimitiva[]) {
-  if (historico.length === 0) {
-    return {
-      totalSorteos: 0,
-      fechaInicio: '',
-      fechaFin: '',
-      numerosCalientes: [] as number[],
-      numerosFrios: [] as number[],
-      numerosMasAtrasados: [] as { numero: number; sorteosSinSalir: number }[],
-      paresImpares: { pares: 0, impares: 0 },
-      sumaMedia: 0,
-      sumaMinima: 0,
-      sumaMaxima: 0,
-    }
-  }
-
-  const total = historico.length
-  const freq = new Map<number, number>()
-  for (let i = 1; i <= 49; i++) freq.set(i, 0)
-  historico.forEach((s: SorteoPrimitiva) => s.numeros.forEach((n: number) => freq.set(n, (freq.get(n) || 0) + 1)))
-
-  const frecuenciaNumeros = Array.from(freq.entries())
-    .map(([numero, frecuencia]: [number, number]) => ({ numero, frecuencia, porcentaje: Number(((frecuencia / (total * 6)) * 100).toFixed(2)) }))
-    .sort((a: { frecuencia: number }, b: { frecuencia: number }) => b.frecuencia - a.frecuencia)
-
-  const ultimaAparicion = new Map<number, number>()
-  for (let i = 1; i <= 49; i++) ultimaAparicion.set(i, -1)
-  historico.forEach((s: SorteoPrimitiva, idx: number) => s.numeros.forEach((n: number) => ultimaAparicion.set(n, idx)))
-
-  const atrasados = Array.from(ultimaAparicion.entries())
-    .map(([numero, ultIdx]: [number, number]) => ({ numero, sorteosSinSalir: ultIdx >= 0 ? total - 1 - ultIdx : total }))
-    .sort((a: { sorteosSinSalir: number }, b: { sorteosSinSalir: number }) => b.sorteosSinSalir - a.sorteosSinSalir)
-
-  let pares = 0, impares = 0
-  historico.forEach((s: SorteoPrimitiva) => s.numeros.forEach((n: number) => { if (n % 2 === 0) pares++; else impares++ }))
-
-  const sumas = historico.map((s: SorteoPrimitiva) => s.numeros.reduce((a: number, b: number) => a + b, 0))
-  const media = sumas.reduce((a: number, b: number) => a + b, 0) / sumas.length
-
-  return {
-    totalSorteos: total,
-    fechaInicio: historico[historico.length - 1]?.fecha ?? '',
-    fechaFin: historico[0]?.fecha ?? '',
-    numerosCalientes: frecuenciaNumeros.slice(0, 10).map((f: { numero: number }) => f.numero),
-    numerosFrios: frecuenciaNumeros.slice(-10).map((f: { numero: number }) => f.numero),
-    numerosMasAtrasados: atrasados.slice(0, 10),
-    paresImpares: { pares, impares },
-    sumaMedia: Number(media.toFixed(2)),
-    sumaMinima: Math.min(...sumas),
-    sumaMaxima: Math.max(...sumas),
-  }
 }
 
 export default App

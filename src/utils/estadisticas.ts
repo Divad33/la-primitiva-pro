@@ -107,6 +107,24 @@ export function estadisticasSuma(historico: SorteoPrimitiva[] = HISTORICO_PRIMIT
 
 /** Genera un informe completo de estadísticas */
 export function generarEstadisticasCompletas(historico: SorteoPrimitiva[] = HISTORICO_PRIMITIVA): EstadisticasGlobales {
+  if (historico.length === 0) {
+    return {
+      totalSorteos: 0,
+      fechaInicio: '',
+      fechaFin: '',
+      frecuenciaNumeros: [],
+      frecuenciaComplementarios: [],
+      frecuenciaReintegros: [],
+      numerosCalientes: [],
+      numerosFrios: [],
+      numerosMasAtrasados: [],
+      paresImpares: { pares: 0, impares: 0 },
+      sumaMedia: 0,
+      sumaMinima: 0,
+      sumaMaxima: 0,
+    };
+  }
+
   const freqNums = calcularFrecuenciaNumeros(historico);
   const freqComp = calcularFrecuenciaComplementarios(historico);
   const freqReint = calcularFrecuenciaReintegros(historico);

@@ -52,6 +52,8 @@ export function useHistorico() {
     actualizar,
     recargar,
     totalSorteos: historico.length,
-    ultimoSorteo: historico.length > 0 ? historico[0] : null,
+    // El historico esta en orden ascendente (mas antiguo -> mas reciente),
+    // asi que el ultimo sorteo es el ultimo elemento del array.
+    ultimoSorteo: historico.length > 0 ? historico[historico.length - 1] : null,
   };
 }

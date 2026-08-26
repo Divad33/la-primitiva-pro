@@ -5,32 +5,16 @@
  * Total de sorteos: 4175
  */
 
-export interface SorteoPrimitiva {
-  fecha: string;
-  numeros: [number, number, number, number, number, number];
-  complementario: number;
-  reintegro: number | null;
-  joker: number | null;
-}
+import type { SorteoPrimitiva } from '../types';
 
 // Importamos el JSON y lo tipamos con un cast seguro
 import rawData from './primitiva-historico.json';
 
 export const HISTORICO_PRIMITIVA = rawData as SorteoPrimitiva[];
 
-export const TOTAL_SORTEOS = 4175;
-export const FECHA_INICIO = '17/10/1985';
-export const FECHA_FIN = '17/08/2026';
-
-export function sorteosPorAnio(anio: number): SorteoPrimitiva[] {
-  return HISTORICO_PRIMITIVA.filter(s => s.fecha.endsWith(`/${anio}`));
-}
-
-export function frecuenciaNumeros(): Record<number, number> {
-  const freq: Record<number, number> = {};
-  for (let i = 1; i <= 49; i++) freq[i] = 0;
-  HISTORICO_PRIMITIVA.forEach(s => {
-    s.numeros.forEach(n => freq[n]++);
-  });
-  return freq;
-}
+// Se derivan de los datos reales (en vez de estar hardcodeados) para que nunca
+// se desincronicen si primitiva-historico.json se actualiza. El histórico está
+// en orden ascendente: el primer sorteo es el más antiguo y el último el más reciente.
+export const TOTAL_SORTEOS = HISTORICO_PRIMITIVA.length;
+export const FECHA_INICIO = HISTORICO_PRIMITIVA[0]?.fecha ?? '';
+export const FECHA_FIN = HISTORICO_PRIMITIVA[HISTORICO_PRIMITIVA.length - 1]?.fecha ?? '';

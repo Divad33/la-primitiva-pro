@@ -4,6 +4,7 @@ La Primitiva Proxy - Multi-fuente
 Intenta LAE primero, luego fuentes alternativas
 """
 
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -12,6 +13,28 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="La Primitiva Proxy")
+
+# Cache simple en memoria (proceso único). Evita golpear la web de LAE en cada
+# request y reduce el riesgo de que bloqueen la IP del proxy por exceso de tráfico.
+# Los sorteos de La Primitiva solo cambian un par de veces por semana, así que un
+# TTL de unos minutos es seguro y no afecta la frescura percibida por el usuario.
+_CACHE_TTL_SECONDS = 300
+_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def _cache_get(key: str) -> dict[str, Any] | None:
+    entry = _cache.get(key)
+    if entry is None:
+        return None
+    ts, value = entry
+    if time.monotonic() - ts > _CACHE_TTL_SECONDS:
+        del _cache[key]
+        return None
+    return value
+
+
+def _cache_set(key: str, value: dict[str, Any]) -> None:
+    _cache[key] = (time.monotonic(), value)
 
 app.add_middleware(
     CORSMiddleware,
@@ -77,7 +100,11 @@ async def _fetch_from_lae() -> list[dict]:
 
 
 async def _fetch_from_alternatives() -> list[dict]:
-    """Placeholder: aquí se pueden añadir scrapers de fuentes alternativas"""
+    """
+    TODO: sin implementar. ALT_URLS lista fuentes candidatas, pero aquí no se
+    hace scraping real todavía. Mientras esto devuelva [], el endpoint
+    /primitiva/latest depende por completo de que la API de LAE responda.
+    """
     return []
 
 
@@ -93,6 +120,10 @@ async def health() -> dict[str, str]:
 
 @app.get("/primitiva/latest")
 async def latest_primitiva() -> dict[str, Any]:
+    cached = _cache_get("latest")
+    if cached is not None:
+        return cached
+
     errors: list[str] = []
     results: list[dict] = []
 
@@ -100,11 +131,13 @@ async def latest_primitiva() -> dict[str, Any]:
     try:
         results = await _fetch_from_lae()
         if results:
-            return {
+            payload = {
                 "source": "LAE - Loterías y Apuestas del Estado",
                 "updatedAt": datetime.now(timezone.utc).isoformat(),
                 "results": results,
             }
+            _cache_set("latest", payload)
+            return payload
     except Exception as e:
         msg = f"LAE: {e}"
         print(f"[ERROR] {msg}")
@@ -135,6 +168,8 @@ async def latest_primitiva() -> dict[str, Any]:
 
 @app.get("/primitiva/historial/{days}")
 async def historial_primitiva(days: int = 7) -> dict[str, Any]:
+    error_msg: str | None = None
+
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             resp = await client.get(
@@ -151,14 +186,16 @@ async def historial_primitiva(days: int = 7) -> dict[str, Any]:
                     "updatedAt": datetime.now(timezone.utc).isoformat(),
                     "results": results,
                 }
+            error_msg = f"Respuesta inesperada de LAE (no es una lista): {type(data).__name__}"
     except Exception as e:
-        print(f"[ERROR] Historial LAE: {e}")
+        error_msg = str(e)
+        print(f"[ERROR] Historial LAE: {error_msg}")
 
     return {
         "source": "LAE",
         "updatedAt": datetime.now(timezone.utc).isoformat(),
         "results": [],
-        "error": str(e),
+        "error": error_msg,
     }
 
 
