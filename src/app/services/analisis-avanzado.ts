@@ -1,5 +1,6 @@
 import { HISTORICO_PRIMITIVA } from '../../data/primitiva-historico';
 import { SorteoPrimitiva } from '../../types';
+import { analizarPopularidad } from '../../utils/popularidad';
 
 export interface NumeroTransition {
   next: number;
@@ -57,6 +58,15 @@ export interface JugadaAvanzada {
   confianza: number;
   color: string;
   detalles: string;
+  /**
+   * Puntuacion anti-popularidad (0-100, menor = mas "propia"/menos elegida
+   * por otros jugadores). No mejora la probabilidad de acertar - eso es
+   * imposible en una loteria - pero si mejora el premio esperado EN CASO
+   * de acertar, porque compartirias el bote con menos gente. Ver
+   * src/utils/popularidad.ts para la explicacion completa.
+   */
+  popularidad: number;
+  motivosPopularidad: string[];
 }
 
 const MIN_OCCURRENCES = 3;
@@ -202,7 +212,10 @@ export function generarJugadasAvanzadas(historico: SorteoPrimitiva[] = HISTORICO
   const freq = calcularFrecuenciaSimple(historico);
   const atrasados = calcularAtrasadosSimple(historico);
 
-  const jugadas: JugadaAvanzada[] = [];
+  // Tipo de trabajo sin los campos de popularidad: se calculan al final,
+  // una sola vez, sobre las 5 jugadas ya generadas (ver el .map de abajo).
+  type JugadaSinPopularidad = Omit<JugadaAvanzada, 'popularidad' | 'motivosPopularidad'>;
+  const jugadas: JugadaSinPopularidad[] = [];
 
   // JUGADA 1: Transiciones Markov
   const transicionNums = new Set<number>();
@@ -293,7 +306,13 @@ export function generarJugadasAvanzadas(historico: SorteoPrimitiva[] = HISTORICO
     detalles: 'Mezcla de números fríos con fuertes tendencias de repetición',
   });
 
-  return jugadas;
+  // Cada jugada generada se enriquece con su puntuacion anti-popularidad.
+  // No cambia la jugada en si, solo anade informacion para decidir entre
+  // jugadas que ya consideras igual de buenas (ver utils/popularidad.ts).
+  return jugadas.map(j => {
+    const { score, motivos } = analizarPopularidad(j.numeros);
+    return { ...j, popularidad: score, motivosPopularidad: motivos };
+  });
 }
 
 // Helpers simples

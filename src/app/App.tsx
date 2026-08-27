@@ -1,19 +1,25 @@
 import { useState, useEffect } from 'react'
 import { useHistorico } from './hooks/useHistorico'
-import { generarJugadasAvanzadas, JugadaAvanzada } from './services/analisis-avanzado'
+import { generarJugadasAvanzadas, JugadaAvanzada, analisisAvanzado, AdvancedAnalysis } from './services/analisis-avanzado'
 import { verificarCombinacion } from './services/generador'
 import { addManualResult } from './services/resultsDb'
 import { generarEstadisticasCompletas } from '../utils/estadisticas'
+import { backtestEstrategia, estrategiaFrecuencia, ResultadoBacktest } from '../utils/backtest'
 import type { SorteoPrimitiva } from '../types/index'
 
 function App() {
   const { historico, cargando, actualizando, ultimaActualizacion, actualizar, recargar, totalSorteos, ultimoSorteo } = useHistorico()
-  const [tab, setTab] = useState<'stats' | 'numbers' | 'last'>('stats')
+  const [tab, setTab] = useState<'stats' | 'analisis' | 'numbers' | 'last'>('stats')
   const [mensaje, setMensaje] = useState('')
 
   const [stats, setStats] = useState(() => generarEstadisticasCompletas([]))
+  const [analisis, setAnalisis] = useState<AdvancedAnalysis | null>(null)
   const [jugadas, setJugadas] = useState<JugadaAvanzada[]>([])
   const [verificaciones, setVerificaciones] = useState<Array<{ yaSalio: boolean; sorteo?: SorteoPrimitiva }>>([])
+
+  // Backtest (bajo demanda, no se calcula automaticamente)
+  const [backtest, setBacktest] = useState<ResultadoBacktest | null>(null)
+  const [calculandoBacktest, setCalculandoBacktest] = useState(false)
 
   // Modal entrada manual
   const [showManual, setShowManual] = useState(false)
@@ -25,6 +31,7 @@ function App() {
   useEffect(() => {
     if (historico.length > 0) {
       setStats(generarEstadisticasCompletas(historico))
+      setAnalisis(analisisAvanzado(historico))
       const nuevasJugadas = generarJugadasAvanzadas(historico)
       setJugadas(nuevasJugadas)
       setVerificaciones(nuevasJugadas.map(j => verificarCombinacion(j.numeros, historico)))
@@ -80,6 +87,19 @@ function App() {
       setJugadas(nuevas)
       setVerificaciones(nuevas.map(j => verificarCombinacion(j.numeros, historico)))
     }
+  }
+
+  const handleEjecutarBacktest = () => {
+    if (historico.length === 0) return
+    setCalculandoBacktest(true)
+    // setTimeout(0) para que React pinte el estado "calculando" antes de la
+    // operacion sincrona (el backtest recorre miles de sorteos y tarda unos
+    // cientos de ms, suficiente para notarse sin el respiro visual).
+    setTimeout(() => {
+      const resultado = backtestEstrategia(historico, estrategiaFrecuencia)
+      setBacktest(resultado)
+      setCalculandoBacktest(false)
+    }, 0)
   }
 
   const renderBalls = (nums: number[], colorClass: string) => (
@@ -140,16 +160,17 @@ function App() {
         </p>
       )}
 
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-1 mb-4">
         {[
-          { key: 'stats' as const, label: '📊 Estadisticas' },
+          { key: 'stats' as const, label: '📊 Stats' },
+          { key: 'analisis' as const, label: '🔍 Análisis' },
           { key: 'numbers' as const, label: '🎰 Jugadas' },
-          { key: 'last' as const, label: '📅 Ultimo' },
+          { key: 'last' as const, label: '📅 Último' },
         ].map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${
+            className={`flex-1 py-2 rounded-lg font-bold text-xs transition ${
               tab === t.key ? 'bg-yellow-500 text-black' : 'bg-slate-700 text-gray-300'
             }`}
           >
@@ -197,11 +218,121 @@ function App() {
         </div>
       )}
 
+      {tab === 'analisis' && analisis && (
+        <div className="space-y-4">
+          <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+            <h2 className="text-lg font-bold text-purple-400 mb-1">🔗 Parejas que más salen juntas</h2>
+            <p className="text-xs text-gray-500 mb-3">Números que coinciden en el mismo sorteo con más frecuencia</p>
+            <div className="grid grid-cols-2 gap-2">
+              {analisis.coOcurrence.slice(0, 10).map((c, i) => (
+                <div key={i} className="bg-slate-900 rounded-lg px-3 py-2 flex items-center justify-between">
+                  <span className="font-bold text-white text-sm">{c.pair[0]} - {c.pair[1]}</span>
+                  <span className="text-xs text-gray-500">{c.count}×</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+            <h2 className="text-lg font-bold text-blue-400 mb-1">📊 Distribución por decenas</h2>
+            <p className="text-xs text-gray-500 mb-3">Qué franja de números (1-10, 11-20…) sale con más frecuencia</p>
+            <div className="space-y-2">
+              {[...analisis.decadas].sort((a, b) => a.decada - b.decada).map(d => {
+                const maxPct = Math.max(...analisis.decadas.map(x => x.pct), 1)
+                const rangos = ['1-10', '11-20', '21-30', '31-40', '41-49']
+                return (
+                  <div key={d.decada}>
+                    <div className="flex justify-between text-xs text-gray-400 mb-1">
+                      <span>{rangos[d.decada]}</span>
+                      <span>{d.pct.toFixed(1)}%</span>
+                    </div>
+                    <div className="w-full bg-slate-900 rounded-full h-2">
+                      <div
+                        className="bg-blue-500 h-2 rounded-full"
+                        style={{ width: `${(d.pct / maxPct) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+            <h2 className="text-lg font-bold text-green-400 mb-1">⚖️ Patrones Par/Impar</h2>
+            <p className="text-xs text-gray-500 mb-3">Combinación de pares e impares más habitual en un sorteo</p>
+            <div className="space-y-1">
+              {analisis.parImparPatterns.slice(0, 5).map(p => (
+                <div key={p.pattern} className="flex justify-between text-sm">
+                  <span className="font-bold text-white">{p.pattern}</span>
+                  <span className="text-gray-400">{p.count} veces ({p.pct.toFixed(1)}%)</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+            <h2 className="text-lg font-bold text-orange-400 mb-1">🔀 Transiciones más fuertes</h2>
+            <p className="text-xs text-gray-500 mb-3">Cuando sale X, el número que más veces ha salido en el sorteo siguiente</p>
+            <div className="space-y-1">
+              {analisis.strongestTransitionLinks.slice(0, 8).map((l, i) => (
+                <div key={i} className="flex justify-between text-sm">
+                  <span className="text-white">{l.from} → {l.to}</span>
+                  <span className="text-gray-400">{l.count}× ({l.pct.toFixed(1)}%)</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+            <h2 className="text-lg font-bold text-yellow-400 mb-1">🧪 Backtest honesto</h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Simula la estrategia "números más frecuentes" sorteo a sorteo, usando solo
+              el histórico anterior a cada uno (sin trampa), y la compara contra elegir al azar.
+            </p>
+            {!backtest && (
+              <button
+                onClick={handleEjecutarBacktest}
+                disabled={calculandoBacktest}
+                className="w-full bg-yellow-600 hover:bg-yellow-500 disabled:bg-yellow-800 text-black font-bold py-2 rounded-lg text-sm transition"
+              >
+                {calculandoBacktest ? '⏳ Calculando...' : '▶️ Ejecutar backtest'}
+              </button>
+            )}
+            {backtest && (
+              <div>
+                <div className="grid grid-cols-2 gap-3 text-center mb-3">
+                  <div className="bg-slate-900 rounded-lg p-3">
+                    <p className="text-xl font-black text-yellow-400">{backtest.aciertosPromedio}</p>
+                    <p className="text-xs text-gray-500">Aciertos promedio<br />(estrategia)</p>
+                  </div>
+                  <div className="bg-slate-900 rounded-lg p-3">
+                    <p className="text-xl font-black text-gray-400">{backtest.comparativaAleatoria.aciertosPromedio}</p>
+                    <p className="text-xs text-gray-500">Aciertos promedio<br />(al azar)</p>
+                  </div>
+                </div>
+                <p className="text-xs text-center text-gray-400 mb-3">
+                  Sobre {backtest.totalSorteosEvaluados.toLocaleString()} sorteos evaluados.
+                  Diferencia: {backtest.diferenciaVsAleatoria >= 0 ? '+' : ''}{backtest.diferenciaVsAleatoria}
+                  {' '}— tal como predice la teoría de probabilidad, ninguna estrategia le gana al azar a largo plazo.
+                </p>
+                <button
+                  onClick={() => setBacktest(null)}
+                  className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 rounded-lg text-sm transition"
+                >
+                  🔄 Repetir
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {tab === 'numbers' && (
         <div className="space-y-4">
           <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
             <h2 className="text-lg font-bold text-yellow-400 mb-1">🎰 5 Jugadas Inteligentes</h2>
-            <p className="text-xs text-gray-400 mb-3">Analisis avanzado: Markov, co-ocurrencia, decenas, patrones</p>
+            <p className="text-xs text-gray-400 mb-3">Análisis avanzado: Markov, co-ocurrencia, decenas, patrones + puntuación anti-popularidad</p>
 
             {jugadas.map((jugada, idx) => (
               <div key={idx} className="mb-4 last:mb-0 bg-slate-900 rounded-lg p-3">
@@ -230,6 +361,21 @@ function App() {
                 </div>
 
                 <p className="text-xs text-gray-500 mt-2 italic">{jugada.detalles}</p>
+
+                <div className="flex items-center gap-2 mt-2">
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                    jugada.popularidad <= 30 ? 'bg-green-900 text-green-300' :
+                    jugada.popularidad <= 60 ? 'bg-yellow-900 text-yellow-300' :
+                    'bg-red-900 text-red-300'
+                  }`}>
+                    {jugada.popularidad <= 30 ? '💎' : jugada.popularidad <= 60 ? '👥' : '⚠️'} Popularidad: {jugada.popularidad}/100
+                  </span>
+                </div>
+                {jugada.popularidad > 60 && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Si aciertas, es más probable que compartas el premio: {jugada.motivosPopularidad[0]}
+                  </p>
+                )}
 
                 {verificaciones[idx]?.yaSalio && (
                   <p className="text-xs text-red-400 mt-2">
