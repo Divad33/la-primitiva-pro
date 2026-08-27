@@ -4,7 +4,9 @@ La Primitiva Proxy - Multi-fuente
 Intenta LAE primero, luego fuentes alternativas
 """
 
+import re
 import time
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import Any
 
@@ -55,7 +57,33 @@ HEADERS = {
 
 LAE_API = "https://www.loteriasyapuestas.es/servicios/buscadorSorteos"
 
-# Fuentes alternativas (HTML scraping como fallback)
+# Feed RSS oficial de LAE. Es la MISMA fuente oficial (loteriasyapuestas.es),
+# pero un endpoint distinto a LAE_API. En la práctica, los feeds RSS suelen
+# tener mucha menos protección anti-bot que los endpoints JSON tipo XHR, así
+# que cuando LAE_API empieza a bloquear al proxy (403 / Cloudflare), este
+# suele seguir respondiendo. Formato de la descripción de cada <item>:
+# "...del 21 de septiembre de 2024, la combinación ganadora ha correspondido
+#  a los siguientes números: 05 - 12 - 13 - 38 - 39 - 47
+#  Complementario: C(41) Reintegro: R(6) Joker: J(4208957)"
+LAE_RSS = "https://www.loteriasyapuestas.es/es/la-primitiva/resultados/.formatoRSS"
+
+_MESES_ES = {
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+    "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10,
+    "noviembre": 11, "diciembre": 12,
+}
+
+_RSS_DESC_RE = re.compile(
+    r"del\s+(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4}).*?"
+    r"n[uú]meros:\s*([\d\s\-]+?)\s*Complementario:\s*C\((\d+)\)\s*"
+    r"Reintegro:\s*R\((\d+)\)(?:\s*Joker:\s*J\((\d+)\))?",
+    re.IGNORECASE | re.DOTALL,
+)
+
+# Fuentes alternativas por scraping HTML: candidatas listadas pero SIN
+# implementar todavía (ver _fetch_from_alternatives). No se garantiza que
+# funcionen: habría que inspeccionar su HTML actual antes de programar
+# selectores, y son más frágiles que la fuente RSS de más arriba.
 ALT_URLS = [
     "https://primitivacomprobar.mundodeportivo.com/",
     "https://www.combinacionganadora.com/primitiva/",
@@ -99,11 +127,57 @@ async def _fetch_from_lae() -> list[dict]:
         return []
 
 
+def _parse_rss_item(title: str, description: str) -> dict | None:
+    """Extrae un sorteo del texto de un <item> del RSS oficial de LAE"""
+    texto = f"{title} {description}"
+    m = _RSS_DESC_RE.search(texto)
+    if not m:
+        return None
+    dia, mes_nombre, anio, numeros_raw, comp, reint, joker = m.groups()
+    mes = _MESES_ES.get(mes_nombre.lower())
+    if mes is None:
+        return None
+    numeros = sorted(int(n) for n in re.findall(r"\d+", numeros_raw))
+    if len(numeros) != 6:
+        return None
+    fecha = f"{int(dia):02d}/{mes:02d}/{anio}"
+    return {
+        "id": f"primitiva-{fecha.replace('/', '-')}",
+        "gameName": "La Primitiva",
+        "fecha": fecha,
+        "numeros": numeros,
+        "complementario": int(comp),
+        "reintegro": int(reint),
+        "joker": int(joker) if joker else None,
+        "drawDate": f"{anio}-{mes:02d}-{int(dia):02d}T00:00:00.000Z",
+    }
+
+
+async def _fetch_from_lae_rss(limit: int = 1) -> list[dict]:
+    """Fallback: feed RSS oficial de LAE (ver comentario junto a LAE_RSS)"""
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        resp = await client.get(LAE_RSS, headers=HEADERS)
+        resp.raise_for_status()
+        root = ET.fromstring(resp.text)
+        resultados: list[dict] = []
+        for item in root.findall(".//item"):
+            title = (item.findtext("title") or "").strip()
+            description = (item.findtext("description") or "").strip()
+            parsed = _parse_rss_item(title, description)
+            if parsed:
+                resultados.append(parsed)
+            if len(resultados) >= limit:
+                break
+        return resultados
+
+
 async def _fetch_from_alternatives() -> list[dict]:
     """
-    TODO: sin implementar. ALT_URLS lista fuentes candidatas, pero aquí no se
-    hace scraping real todavía. Mientras esto devuelva [], el endpoint
-    /primitiva/latest depende por completo de que la API de LAE responda.
+    TODO: sin implementar. ALT_URLS lista fuentes candidatas por scraping
+    HTML, pero aquí no se hace scraping real todavía. Esto ya no es el único
+    fallback: antes de llegar aquí se intenta LAE_API y luego LAE_RSS (ver
+    _fetch_from_lae_rss), ambas fuentes oficiales. Solo si esas dos fallan
+    se llega a este stub, que hoy devuelve [] siempre.
     """
     return []
 
@@ -127,7 +201,7 @@ async def latest_primitiva() -> dict[str, Any]:
     errors: list[str] = []
     results: list[dict] = []
 
-    # 1. Intentar LAE
+    # 1. Intentar LAE (API JSON oficial)
     try:
         results = await _fetch_from_lae()
         if results:
@@ -143,7 +217,24 @@ async def latest_primitiva() -> dict[str, Any]:
         print(f"[ERROR] {msg}")
         errors.append(msg)
 
-    # 2. Intentar alternativas
+    # 2. Intentar LAE (RSS oficial) - mismo origen, endpoint distinto,
+    #    normalmente con menos protección anti-bot que el paso 1
+    try:
+        results = await _fetch_from_lae_rss()
+        if results:
+            payload = {
+                "source": "LAE - Loterías y Apuestas del Estado (RSS)",
+                "updatedAt": datetime.now(timezone.utc).isoformat(),
+                "results": results,
+            }
+            _cache_set("latest", payload)
+            return payload
+    except Exception as e:
+        msg = f"LAE RSS: {e}"
+        print(f"[ERROR] {msg}")
+        errors.append(msg)
+
+    # 3. Intentar alternativas
     try:
         results = await _fetch_from_alternatives()
         if results:
@@ -157,7 +248,7 @@ async def latest_primitiva() -> dict[str, Any]:
         print(f"[ERROR] {msg}")
         errors.append(msg)
 
-    # 3. Nada funcionó
+    # 4. Nada funcionó
     return {
         "source": "Ninguna fuente disponible",
         "updatedAt": datetime.now(timezone.utc).isoformat(),
@@ -168,8 +259,9 @@ async def latest_primitiva() -> dict[str, Any]:
 
 @app.get("/primitiva/historial/{days}")
 async def historial_primitiva(days: int = 7) -> dict[str, Any]:
-    error_msg: str | None = None
+    errors: list[str] = []
 
+    # 1. Intentar LAE (API JSON oficial)
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             resp = await client.get(
@@ -186,16 +278,33 @@ async def historial_primitiva(days: int = 7) -> dict[str, Any]:
                     "updatedAt": datetime.now(timezone.utc).isoformat(),
                     "results": results,
                 }
-            error_msg = f"Respuesta inesperada de LAE (no es una lista): {type(data).__name__}"
+            errors.append(f"Respuesta inesperada de LAE (no es una lista): {type(data).__name__}")
     except Exception as e:
-        error_msg = str(e)
-        print(f"[ERROR] Historial LAE: {error_msg}")
+        msg = f"LAE: {e}"
+        print(f"[ERROR] Historial LAE: {msg}")
+        errors.append(msg)
+
+    # 2. Intentar LAE (RSS oficial). El feed no soporta pedir un rango de
+    #    días como la API JSON, así que se piden como máximo `days` items
+    #    (los que el feed traiga disponibles).
+    try:
+        results = await _fetch_from_lae_rss(limit=days)
+        if results:
+            return {
+                "source": "LAE (RSS)",
+                "updatedAt": datetime.now(timezone.utc).isoformat(),
+                "results": results,
+            }
+    except Exception as e:
+        msg = f"LAE RSS: {e}"
+        print(f"[ERROR] Historial LAE RSS: {msg}")
+        errors.append(msg)
 
     return {
         "source": "LAE",
         "updatedAt": datetime.now(timezone.utc).isoformat(),
         "results": [],
-        "error": error_msg,
+        "error": " | ".join(errors) if errors else None,
     }
 
 
