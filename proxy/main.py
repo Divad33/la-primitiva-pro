@@ -4,6 +4,7 @@ La Primitiva Proxy - Multi-fuente
 Intenta LAE primero, luego fuentes alternativas
 """
 
+import os
 import re
 import time
 import xml.etree.ElementTree as ET
@@ -89,6 +90,17 @@ ALT_URLS = [
     "https://www.combinacionganadora.com/primitiva/",
 ]
 
+# Tercera fuente, opcional: loteriasapi.com. A diferencia de LAE_API y
+# LAE_RSS (ambas en loteriasyapuestas.es), esta vive en un dominio y hosting
+# totalmente distintos, así que un bloqueo de Cloudflare a las IPs de Render
+# en el dominio de LAE no la afecta. Requiere una API key gratuita (plan
+# free: 1000 peticiones/mes, sin tarjeta) - regístrate en
+# https://loteriasapi.com/auth/register y define la variable de entorno
+# LOTERIAS_API_KEY en Render (Settings -> Environment). Si la variable no
+# está definida, esta fuente simplemente se salta (no rompe nada).
+LOTERIASAPI_KEY = os.environ.get("LOTERIAS_API_KEY", "").strip()
+LOTERIASAPI_URL = "https://api.loteriasapi.com/api/v1/results/primitiva/latest"
+
 
 def _parse_sorteo(data: dict) -> dict:
     numeros = sorted([
@@ -171,13 +183,79 @@ async def _fetch_from_lae_rss(limit: int = 1) -> list[dict]:
         return resultados
 
 
+async def _fetch_from_loteriasapi() -> list[dict]:
+    """
+    Fuente de respaldo en un origen totalmente distinto a LAE (ver comentario
+    junto a LOTERIASAPI_URL). Se salta silenciosamente si no hay API key
+    configurada.
+
+    NOTA DE HONESTIDAD: la doc pública de loteriasapi.com confirma el
+    endpoint (GET /api/v1/results/primitiva/latest) y el shape general de la
+    respuesta ({"data": {"game", "drawDate", "combination", "resultData",
+    ...}}), pero no pude verificar los nombres exactos de los campos dentro
+    de "resultData" para La Primitiva (complementario/reintegro/joker) sin
+    una API key real. Este parser prueba varios nombres de campo razonables;
+    si no encaja con la respuesta real, revisa los logs de Render (se
+    imprime la respuesta cruda) y ajustamos los nombres de campo.
+    """
+    if not LOTERIASAPI_KEY:
+        return []
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            LOTERIASAPI_URL,
+            headers={"X-API-Key": LOTERIASAPI_KEY},
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        data = body.get("data") if isinstance(body, dict) else None
+        if not isinstance(data, dict):
+            print(f"[WARN] loteriasapi.com: shape inesperado: {body}")
+            return []
+
+        combinacion = data.get("combination") or data.get("combinacion")
+        if not combinacion or len(combinacion) < 6:
+            print(f"[WARN] loteriasapi.com: sin 'combination' válida: {data}")
+            return []
+
+        result_data = data.get("resultData") or data.get("result_data") or {}
+        complementario = (
+            result_data.get("complementario")
+            or result_data.get("complementary")
+            or result_data.get("bonus")
+        )
+        reintegro = (
+            result_data.get("reintegro")
+            or result_data.get("refund")
+        )
+        joker = result_data.get("joker")
+
+        draw_date = data.get("drawDate", "")  # formato esperado: YYYY-MM-DD
+        if len(draw_date) == 10:
+            anio, mes, dia = draw_date.split("-")
+            fecha = f"{dia}/{mes}/{anio}"
+        else:
+            fecha = draw_date
+
+        return [{
+            "id": f"primitiva-{fecha.replace('/', '-')}",
+            "gameName": "La Primitiva",
+            "fecha": fecha,
+            "numeros": sorted(int(n) for n in combinacion[:6]),
+            "complementario": int(complementario) if complementario is not None else 0,
+            "reintegro": int(reintegro) if reintegro is not None else None,
+            "joker": int(joker) if joker else None,
+            "drawDate": f"{draw_date}T00:00:00.000Z" if draw_date else "",
+        }]
+
+
 async def _fetch_from_alternatives() -> list[dict]:
     """
     TODO: sin implementar. ALT_URLS lista fuentes candidatas por scraping
     HTML, pero aquí no se hace scraping real todavía. Esto ya no es el único
-    fallback: antes de llegar aquí se intenta LAE_API y luego LAE_RSS (ver
-    _fetch_from_lae_rss), ambas fuentes oficiales. Solo si esas dos fallan
-    se llega a este stub, que hoy devuelve [] siempre.
+    fallback: antes de llegar aquí se intenta LAE_API, LAE_RSS y
+    loteriasapi.com (si hay API key). Solo si esas fallan se llega a este
+    stub, que hoy devuelve [] siempre.
     """
     return []
 
@@ -234,7 +312,23 @@ async def latest_primitiva() -> dict[str, Any]:
         print(f"[ERROR] {msg}")
         errors.append(msg)
 
-    # 3. Intentar alternativas
+    # 3. Intentar loteriasapi.com (origen distinto, solo si hay API key)
+    try:
+        results = await _fetch_from_loteriasapi()
+        if results:
+            payload = {
+                "source": "loteriasapi.com",
+                "updatedAt": datetime.now(timezone.utc).isoformat(),
+                "results": results,
+            }
+            _cache_set("latest", payload)
+            return payload
+    except Exception as e:
+        msg = f"loteriasapi.com: {e}"
+        print(f"[ERROR] {msg}")
+        errors.append(msg)
+
+    # 4. Intentar alternativas
     try:
         results = await _fetch_from_alternatives()
         if results:
@@ -248,7 +342,7 @@ async def latest_primitiva() -> dict[str, Any]:
         print(f"[ERROR] {msg}")
         errors.append(msg)
 
-    # 4. Nada funcionó
+    # 5. Nada funcionó
     return {
         "source": "Ninguna fuente disponible",
         "updatedAt": datetime.now(timezone.utc).isoformat(),
