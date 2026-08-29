@@ -183,6 +183,31 @@ async def _fetch_from_lae_rss(limit: int = 1) -> list[dict]:
         return resultados
 
 
+def _as_int(value: Any) -> int | None:
+    """
+    Convierte un valor de la respuesta de loteriasapi.com a int, tolerando
+    formas que la doc pública no especifica con exactitud: un int/float
+    plano, un string numérico, o un objeto anidado tipo {"number": 41}.
+    Devuelve None si no se puede interpretar (en vez de lanzar una excepción
+    que tumbe toda la petición, como pasaba antes con int() directo).
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    if isinstance(value, dict):
+        for key in ("number", "value", "numero", "num", "n"):
+            if key in value:
+                return _as_int(value[key])
+        return None
+    return None
+
+
 async def _fetch_from_loteriasapi() -> list[dict]:
     """
     Fuente de respaldo en un origen totalmente distinto a LAE (ver comentario
@@ -192,11 +217,12 @@ async def _fetch_from_loteriasapi() -> list[dict]:
     NOTA DE HONESTIDAD: la doc pública de loteriasapi.com confirma el
     endpoint (GET /api/v1/results/primitiva/latest) y el shape general de la
     respuesta ({"data": {"game", "drawDate", "combination", "resultData",
-    ...}}), pero no pude verificar los nombres exactos de los campos dentro
-    de "resultData" para La Primitiva (complementario/reintegro/joker) sin
-    una API key real. Este parser prueba varios nombres de campo razonables;
-    si no encaja con la respuesta real, revisa los logs de Render (se
-    imprime la respuesta cruda) y ajustamos los nombres de campo.
+    ...}}), pero no el shape exacto de cada campo dentro de "resultData"
+    (pueden venir como int plano o como objeto anidado, según el juego).
+    Por eso toda la lectura de números pasa por _as_int(), que tolera ambas
+    formas en vez de asumir una y romper con la otra. Si algún campo sigue
+    sin poder leerse, se imprime la respuesta cruda completa en los logs de
+    Render para poder ajustar el nombre exacto sin tener que adivinar.
     """
     if not LOTERIASAPI_KEY:
         return []
@@ -208,45 +234,50 @@ async def _fetch_from_loteriasapi() -> list[dict]:
         )
         resp.raise_for_status()
         body = resp.json()
-        data = body.get("data") if isinstance(body, dict) else None
-        if not isinstance(data, dict):
-            print(f"[WARN] loteriasapi.com: shape inesperado: {body}")
-            return []
 
-        combinacion = data.get("combination") or data.get("combinacion")
-        if not combinacion or len(combinacion) < 6:
-            print(f"[WARN] loteriasapi.com: sin 'combination' válida: {data}")
-            return []
+    data = body.get("data") if isinstance(body, dict) else None
+    if not isinstance(data, dict):
+        print(f"[WARN] loteriasapi.com: shape inesperado (sin 'data'): {body}")
+        return []
 
-        result_data = data.get("resultData") or data.get("result_data") or {}
-        complementario = (
-            result_data.get("complementario")
-            or result_data.get("complementary")
-            or result_data.get("bonus")
-        )
-        reintegro = (
-            result_data.get("reintegro")
-            or result_data.get("refund")
-        )
-        joker = result_data.get("joker")
+    combinacion_raw = data.get("combination") or data.get("combinacion") or []
+    numeros = [n for n in (_as_int(x) for x in combinacion_raw) if n is not None]
+    if len(numeros) < 6:
+        print(f"[WARN] loteriasapi.com: 'combination' no trajo 6 números válidos. Respuesta completa: {data}")
+        return []
 
-        draw_date = data.get("drawDate", "")  # formato esperado: YYYY-MM-DD
-        if len(draw_date) == 10:
-            anio, mes, dia = draw_date.split("-")
-            fecha = f"{dia}/{mes}/{anio}"
-        else:
-            fecha = draw_date
+    result_data = data.get("resultData") or data.get("result_data") or {}
+    complementario = _as_int(
+        result_data.get("complementario")
+        or result_data.get("complementary")
+        or result_data.get("bonus")
+    )
+    reintegro = _as_int(result_data.get("reintegro") or result_data.get("refund"))
+    joker = _as_int(result_data.get("joker"))
 
-        return [{
-            "id": f"primitiva-{fecha.replace('/', '-')}",
-            "gameName": "La Primitiva",
-            "fecha": fecha,
-            "numeros": sorted(int(n) for n in combinacion[:6]),
-            "complementario": int(complementario) if complementario is not None else 0,
-            "reintegro": int(reintegro) if reintegro is not None else None,
-            "joker": int(joker) if joker else None,
-            "drawDate": f"{draw_date}T00:00:00.000Z" if draw_date else "",
-        }]
+    if complementario is None:
+        # El complementario no es opcional en La Primitiva - si no se pudo
+        # leer, dejamos rastro completo en los logs para ajustar el nombre
+        # o el shape del campo la próxima vez, sin tener que adivinar otra vez.
+        print(f"[WARN] loteriasapi.com: no se pudo leer 'complementario'. resultData completo: {result_data}")
+
+    draw_date = data.get("drawDate", "")  # formato esperado: YYYY-MM-DD
+    if isinstance(draw_date, str) and len(draw_date) == 10 and draw_date.count("-") == 2:
+        anio, mes, dia = draw_date.split("-")
+        fecha = f"{dia}/{mes}/{anio}"
+    else:
+        fecha = str(draw_date) if draw_date else ""
+
+    return [{
+        "id": f"primitiva-{fecha.replace('/', '-')}" if fecha else "primitiva-loteriasapi",
+        "gameName": "La Primitiva",
+        "fecha": fecha,
+        "numeros": sorted(numeros[:6]),
+        "complementario": complementario if complementario is not None else 0,
+        "reintegro": reintegro,
+        "joker": joker,
+        "drawDate": f"{draw_date}T00:00:00.000Z" if draw_date else "",
+    }]
 
 
 async def _fetch_from_alternatives() -> list[dict]:

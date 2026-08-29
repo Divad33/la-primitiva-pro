@@ -57,7 +57,14 @@ export async function syncPrimitivaResults(): Promise<SyncResult> {
       latestDraw = all[0];
       console.log('[SYNC] Added:', addedLatest, 'Total:', all.length);
     } else {
-      console.log('[SYNC] Proxy respondió pero sin resultados');
+      // El proxy respondió 200 OK pero sin resultados: normalmente significa
+      // que ninguna de sus fuentes (LAE, RSS de LAE, loteriasapi.com) pudo
+      // responder en ese momento. El proxy ya trae el motivo real en
+      // `data.error` - antes se descartaba en silencio y el usuario solo
+      // veía un "No se pudo conectar" generico sin pista de la causa real.
+      const motivoProxy = typeof data?.error === 'string' && data.error ? data.error : null;
+      console.log('[SYNC] Proxy respondió pero sin resultados. Motivo:', motivoProxy);
+      if (motivoProxy) errors.push(`Proxy sin resultados: ${motivoProxy}`);
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
