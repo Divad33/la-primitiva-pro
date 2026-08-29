@@ -39,10 +39,14 @@ function App() {
   }, [historico])
 
   const handleActualizar = async () => {
-    setMensaje('⏳ Buscando nuevo sorteo...')
+    setMensaje('⏳ Buscando sorteos nuevos...')
     const resultado = await actualizar()
     if (resultado.nuevo) {
-      setMensaje(`✅ Nuevo sorteo añadido: ${resultado.sorteo?.fecha}`)
+      if (resultado.cantidadNuevos > 1) {
+        setMensaje(`✅ ${resultado.cantidadNuevos} sorteos nuevos añadidos (último: ${resultado.sorteo?.fecha})`)
+      } else {
+        setMensaje(`✅ Nuevo sorteo añadido: ${resultado.sorteo?.fecha}`)
+      }
     } else if (resultado.sorteo) {
       setMensaje(`ℹ️ Ya tienes el ultimo sorteo (${resultado.sorteo.fecha})`)
     } else {

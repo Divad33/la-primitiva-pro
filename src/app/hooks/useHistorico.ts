@@ -40,7 +40,7 @@ export function useHistorico() {
     } catch (e) {
       console.error('[useHistorico] Error actualizando:', e);
       setActualizando(false);
-      return { nuevo: false, sorteo: null, error: 'Error inesperado en la app' };
+      return { nuevo: false, cantidadNuevos: 0, sorteo: null, error: 'Error inesperado en la app' };
     }
   };
 

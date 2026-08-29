@@ -68,6 +68,7 @@ export async function obtenerHistoricoCompleto(): Promise<SorteoPrimitiva[]> {
 
 export async function actualizarDesdeProxy(): Promise<{
   nuevo: boolean;
+  cantidadNuevos: number;
   sorteo: SorteoPrimitiva | null;
   error?: string;
 }> {
@@ -76,6 +77,7 @@ export async function actualizarDesdeProxy(): Promise<{
   if (sync.addedLatest > 0 && sync.latestDraw) {
     return {
       nuevo: true,
+      cantidadNuevos: sync.addedLatest,
       sorteo: {
         fecha: sync.latestDraw.fecha,
         numeros: sync.latestDraw.numeros as [number, number, number, number, number, number],
@@ -89,6 +91,7 @@ export async function actualizarDesdeProxy(): Promise<{
   if (sync.latestDraw) {
     return {
       nuevo: false,
+      cantidadNuevos: 0,
       sorteo: {
         fecha: sync.latestDraw.fecha,
         numeros: sync.latestDraw.numeros as [number, number, number, number, number, number],
@@ -100,5 +103,5 @@ export async function actualizarDesdeProxy(): Promise<{
     };
   }
 
-  return { nuevo: false, sorteo: null, error: sync.error };
+  return { nuevo: false, cantidadNuevos: 0, sorteo: null, error: sync.error };
 }

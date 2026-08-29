@@ -99,7 +99,13 @@ ALT_URLS = [
 # LOTERIAS_API_KEY en Render (Settings -> Environment). Si la variable no
 # está definida, esta fuente simplemente se salta (no rompe nada).
 LOTERIASAPI_KEY = os.environ.get("LOTERIAS_API_KEY", "").strip()
-LOTERIASAPI_URL = "https://api.loteriasapi.com/api/v1/results/primitiva/latest"
+LOTERIASAPI_BASE = "https://api.loteriasapi.com/api/v1/results/primitiva"
+LOTERIASAPI_URL = f"{LOTERIASAPI_BASE}/latest"
+# Endpoint de lista: trae varios sorteos recientes en una sola llamada
+# (documentado en https://loteriasapi.com/docs/results). Se usa para poder
+# "ponerse al día" de una sola vez si han pasado varios sorteos desde la
+# última sincronización, en vez de traer solo el más reciente.
+LOTERIASAPI_LIST_URL = LOTERIASAPI_BASE
 
 
 def _parse_sorteo(data: dict) -> dict:
@@ -208,43 +214,27 @@ def _as_int(value: Any) -> int | None:
     return None
 
 
-async def _fetch_from_loteriasapi() -> list[dict]:
+def _map_loteriasapi_item(data: dict) -> dict | None:
     """
-    Fuente de respaldo en un origen totalmente distinto a LAE (ver comentario
-    junto a LOTERIASAPI_URL). Se salta silenciosamente si no hay API key
-    configurada.
+    Convierte un objeto de resultado de loteriasapi.com (el shape de un
+    elemento, tanto si viene solo de /latest como dentro de la lista de
+    /results) al formato interno del proxy.
 
-    NOTA DE HONESTIDAD: la doc pública de loteriasapi.com confirma el
-    endpoint (GET /api/v1/results/primitiva/latest) y el shape general de la
-    respuesta ({"data": {"game", "drawDate", "combination", "resultData",
-    ...}}), pero no el shape exacto de cada campo dentro de "resultData"
-    (pueden venir como int plano o como objeto anidado, según el juego).
-    Por eso toda la lectura de números pasa por _as_int(), que tolera ambas
-    formas en vez de asumir una y romper con la otra. Si algún campo sigue
-    sin poder leerse, se imprime la respuesta cruda completa en los logs de
-    Render para poder ajustar el nombre exacto sin tener que adivinar.
+    Confirmado contra la documentación oficial
+    (https://loteriasapi.com/docs/results, sección "Primitiva"):
+    resultData = {"complementario": <int>, "reintegro": <int>}, ambos
+    enteros planos (no anidados). Aun así se sigue pasando todo por
+    _as_int() por si el plan/version de la cuenta cambia el shape - es
+    una defensa barata que no cuesta nada mantener.
     """
-    if not LOTERIASAPI_KEY:
-        return []
-
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.get(
-            LOTERIASAPI_URL,
-            headers={"X-API-Key": LOTERIASAPI_KEY},
-        )
-        resp.raise_for_status()
-        body = resp.json()
-
-    data = body.get("data") if isinstance(body, dict) else None
     if not isinstance(data, dict):
-        print(f"[WARN] loteriasapi.com: shape inesperado (sin 'data'): {body}")
-        return []
+        return None
 
     combinacion_raw = data.get("combination") or data.get("combinacion") or []
     numeros = [n for n in (_as_int(x) for x in combinacion_raw) if n is not None]
     if len(numeros) < 6:
-        print(f"[WARN] loteriasapi.com: 'combination' no trajo 6 números válidos. Respuesta completa: {data}")
-        return []
+        print(f"[WARN] loteriasapi.com: item sin 6 números válidos: {data}")
+        return None
 
     result_data = data.get("resultData") or data.get("result_data") or {}
     complementario = _as_int(
@@ -256,10 +246,7 @@ async def _fetch_from_loteriasapi() -> list[dict]:
     joker = _as_int(result_data.get("joker"))
 
     if complementario is None:
-        # El complementario no es opcional en La Primitiva - si no se pudo
-        # leer, dejamos rastro completo en los logs para ajustar el nombre
-        # o el shape del campo la próxima vez, sin tener que adivinar otra vez.
-        print(f"[WARN] loteriasapi.com: no se pudo leer 'complementario'. resultData completo: {result_data}")
+        print(f"[WARN] loteriasapi.com: no se pudo leer 'complementario'. resultData: {result_data}")
 
     draw_date = data.get("drawDate", "")  # formato esperado: YYYY-MM-DD
     if isinstance(draw_date, str) and len(draw_date) == 10 and draw_date.count("-") == 2:
@@ -268,7 +255,7 @@ async def _fetch_from_loteriasapi() -> list[dict]:
     else:
         fecha = str(draw_date) if draw_date else ""
 
-    return [{
+    return {
         "id": f"primitiva-{fecha.replace('/', '-')}" if fecha else "primitiva-loteriasapi",
         "gameName": "La Primitiva",
         "fecha": fecha,
@@ -277,7 +264,73 @@ async def _fetch_from_loteriasapi() -> list[dict]:
         "reintegro": reintegro,
         "joker": joker,
         "drawDate": f"{draw_date}T00:00:00.000Z" if draw_date else "",
-    }]
+    }
+
+
+async def _fetch_from_loteriasapi() -> list[dict]:
+    """
+    Fuente de respaldo en un origen totalmente distinto a LAE (ver comentario
+    junto a LOTERIASAPI_BASE). Se salta silenciosamente si no hay API key
+    configurada. Trae solo el sorteo más reciente.
+    """
+    if not LOTERIASAPI_KEY:
+        return []
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(LOTERIASAPI_URL, headers={"X-API-Key": LOTERIASAPI_KEY})
+        resp.raise_for_status()
+        body = resp.json()
+
+    data = body.get("data") if isinstance(body, dict) else None
+    if not isinstance(data, dict):
+        print(f"[WARN] loteriasapi.com (latest): shape inesperado (sin 'data'): {body}")
+        return []
+
+    item = _map_loteriasapi_item(data)
+    return [item] if item else []
+
+
+async def _fetch_from_loteriasapi_historial(limit: int) -> list[dict]:
+    """
+    Trae hasta `limit` sorteos recientes en una sola llamada, usando el
+    endpoint de lista (GET /results/primitiva?limit=N&order=desc). Sirve
+    para "ponerse al día" de una sola vez si han pasado varios sorteos
+    desde la última sincronización, en vez de traer solo el último y
+    dejar huecos en el histórico local.
+
+    El plan gratuito puede topar el `limit` real por página aunque se pida
+    uno mayor (paginación server-side) - por eso se registra en los logs
+    cuántos items llegaron realmente vs. los que se pidieron, para poder
+    detectar si hace falta paginar en el futuro.
+    """
+    if not LOTERIASAPI_KEY:
+        return []
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            LOTERIASAPI_LIST_URL,
+            headers={"X-API-Key": LOTERIASAPI_KEY},
+            params={"limit": limit, "order": "desc", "page": 1},
+        )
+        resp.raise_for_status()
+        body = resp.json()
+
+    data = body.get("data") if isinstance(body, dict) else None
+    if not isinstance(data, list):
+        print(f"[WARN] loteriasapi.com (historial): shape inesperado (sin lista 'data'): {body}")
+        return []
+
+    resultados = [item for item in (_map_loteriasapi_item(d) for d in data) if item]
+
+    meta = body.get("meta") if isinstance(body, dict) else None
+    if isinstance(meta, dict) and meta.get("hasNext"):
+        print(
+            f"[INFO] loteriasapi.com (historial): hay más páginas disponibles "
+            f"(pedidos {limit}, recibidos {len(resultados)} de un total de {meta.get('total')}). "
+            f"No se paginó automáticamente."
+        )
+
+    return resultados
 
 
 async def _fetch_from_alternatives() -> list[dict]:
@@ -423,6 +476,20 @@ async def historial_primitiva(days: int = 7) -> dict[str, Any]:
     except Exception as e:
         msg = f"LAE RSS: {e}"
         print(f"[ERROR] Historial LAE RSS: {msg}")
+        errors.append(msg)
+
+    # 3. Intentar loteriasapi.com (origen distinto, solo si hay API key)
+    try:
+        results = await _fetch_from_loteriasapi_historial(limit=days)
+        if results:
+            return {
+                "source": "loteriasapi.com",
+                "updatedAt": datetime.now(timezone.utc).isoformat(),
+                "results": results,
+            }
+    except Exception as e:
+        msg = f"loteriasapi.com: {e}"
+        print(f"[ERROR] Historial loteriasapi.com: {msg}")
         errors.append(msg)
 
     return {

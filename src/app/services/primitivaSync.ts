@@ -1,8 +1,16 @@
 import { addResults, getAllResults, type PrimitivaResult } from './resultsDb';
 
-const PROXY_URL = 'https://la-primitiva-proxy.onrender.com/primitiva/latest';
+// Se usa /historial/{DIAS} en vez de /latest para poder "ponerse al día" de
+// una sola vez: si el usuario no abre la app durante un tiempo y se pierde
+// más de un sorteo, /latest solo trae el más reciente y deja huecos en el
+// histórico local. /historial trae varios sorteos recientes de una vez;
+// addResults() ya deduplica por fecha, así que pedir de más no hace daño,
+// simplemente no se vuelve a guardar lo que ya se tenía.
+const DIAS_A_SINCRONIZAR = 60;
+const PROXY_URL = `https://la-primitiva-proxy.onrender.com/primitiva/historial/${DIAS_A_SINCRONIZAR}`;
 
 export interface SyncResult {
+  /** Cuántos sorteos NUEVOS se guardaron en esta sincronización (puede ser más de 1) */
   addedLatest: number;
   total: number;
   latestOnline: boolean;
