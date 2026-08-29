@@ -292,43 +292,49 @@ async def _fetch_from_loteriasapi() -> list[dict]:
 
 async def _fetch_from_loteriasapi_historial(limit: int) -> list[dict]:
     """
-    Trae hasta `limit` sorteos recientes en una sola llamada, usando el
-    endpoint de lista (GET /results/primitiva?limit=N&order=desc). Sirve
-    para "ponerse al día" de una sola vez si han pasado varios sorteos
-    desde la última sincronización, en vez de traer solo el último y
-    dejar huecos en el histórico local.
+    Trae hasta `limit` sorteos recientes, usando el endpoint de lista
+    (GET /results/primitiva?limit=N&order=desc&page=P). Sirve para
+    "ponerse al día" de una sola sincronización si han pasado varios
+    sorteos desde la última, en vez de traer solo el último y dejar
+    huecos en el histórico local.
 
-    El plan gratuito puede topar el `limit` real por página aunque se pida
-    uno mayor (paginación server-side) - por eso se registra en los logs
-    cuántos items llegaron realmente vs. los que se pidieron, para poder
-    detectar si hace falta paginar en el futuro.
+    IMPORTANTE: el plan gratuito de loteriasapi.com limita cuántos
+    resultados puede pedirse POR PÁGINA - pedir un `limit` grande de una
+    sola vez (ej. 60) devuelve 400 Bad Request en vez de recortarlo en
+    silencio (confirmado en producción). Por eso aquí se usa un tamaño de
+    página conservador (el mismo que la doc marca como valor por defecto,
+    así que es casi seguro que el plan gratuito lo acepta) y se avanza
+    por `page` hasta juntar lo pedido, con un tope de páginas para no
+    gastar de más la cuota mensual de la API en una sola sincronización.
     """
     if not LOTERIASAPI_KEY:
         return []
 
+    TAM_PAGINA = 10  # valor por defecto documentado - el más seguro para el plan free
+    MAX_PAGINAS = 5  # tope: como mucho 50 sorteos y 5 llamadas por sincronización
+
+    resultados: list[dict] = []
     async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.get(
-            LOTERIASAPI_LIST_URL,
-            headers={"X-API-Key": LOTERIASAPI_KEY},
-            params={"limit": limit, "order": "desc", "page": 1},
-        )
-        resp.raise_for_status()
-        body = resp.json()
+        for page in range(1, MAX_PAGINAS + 1):
+            resp = await client.get(
+                LOTERIASAPI_LIST_URL,
+                headers={"X-API-Key": LOTERIASAPI_KEY},
+                params={"limit": TAM_PAGINA, "order": "desc", "page": page},
+            )
+            resp.raise_for_status()
+            body = resp.json()
 
-    data = body.get("data") if isinstance(body, dict) else None
-    if not isinstance(data, list):
-        print(f"[WARN] loteriasapi.com (historial): shape inesperado (sin lista 'data'): {body}")
-        return []
+            data = body.get("data") if isinstance(body, dict) else None
+            if not isinstance(data, list):
+                print(f"[WARN] loteriasapi.com (historial, página {page}): shape inesperado (sin lista 'data'): {body}")
+                break
 
-    resultados = [item for item in (_map_loteriasapi_item(d) for d in data) if item]
+            resultados.extend(item for item in (_map_loteriasapi_item(d) for d in data) if item)
 
-    meta = body.get("meta") if isinstance(body, dict) else None
-    if isinstance(meta, dict) and meta.get("hasNext"):
-        print(
-            f"[INFO] loteriasapi.com (historial): hay más páginas disponibles "
-            f"(pedidos {limit}, recibidos {len(resultados)} de un total de {meta.get('total')}). "
-            f"No se paginó automáticamente."
-        )
+            meta = body.get("meta") if isinstance(body, dict) else None
+            hay_mas = isinstance(meta, dict) and bool(meta.get("hasNext"))
+            if len(resultados) >= limit or not hay_mas:
+                break
 
     return resultados
 
